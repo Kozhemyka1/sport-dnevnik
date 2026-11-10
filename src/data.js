@@ -8,6 +8,13 @@ export const DAY_NAMES = {
 };
 export const DAY_ORDER = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
 
+// Неделя программы идёт со среды (старт 11.11.2026):
+// день 1 = СР (толчок ДЦ), день 7 = ВТ (отдых)
+export const TAB_ORDER = ['wed', 'thu', 'fri', 'sat', 'sun', 'mon', 'tue'];
+export const REAL_TO_PROG = {
+  wed: 'mon', thu: 'tue', fri: 'wed', sat: 'thu', sun: 'fri', mon: 'sat', tue: 'sun',
+};
+
 // Краткие описания упражнений (кнопка "?")
 export const DESCR = {
   'Толчок ДЦ': 'Толчок по длинному циклу: две гири с груди выжимаются над головой за счёт двойного подседа, затем сброс на грудь и вниз. Каждое повторение — полный цикл с постановкой на грудь.',

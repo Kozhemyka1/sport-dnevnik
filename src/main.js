@@ -1,5 +1,5 @@
 import {
-  START_DATE, DAY_NAMES, DAY_ORDER, DESCR,
+  START_DATE, DAY_NAMES, DAY_ORDER, TAB_ORDER, REAL_TO_PROG, DESCR,
   WARMUP, COOLDOWN, RULES, MEASUREMENTS, WEEKS, GLOSSARY,
 } from './data.js';
 
@@ -26,7 +26,7 @@ function todayInfo() {
   const now = new Date();
   const diff = Math.floor((new Date(iso(now) + 'T00:00:00') - start) / DAY_MS);
   if (diff >= 0 && diff < 28) {
-    return { week: Math.floor(diff / 7) + 1, day: DAY_ORDER[diff % 7], inPlan: true };
+    return { week: Math.floor(diff / 7) + 1, day: TAB_ORDER[diff % 7], inPlan: true };
   }
   return { week: 1, day: DAY_ORDER[(now.getDay() + 6) % 7], inPlan: false };
 }
@@ -71,7 +71,7 @@ function renderNav() {
   $weekNav.querySelectorAll('button').forEach(b =>
     b.addEventListener('click', () => { curWeek = +b.dataset.week; if (curView === 'diary' || curView === 'info') curView = TODAY.day; render(); }));
 
-  const dayBtns = DAY_ORDER.map(d =>
+  const dayBtns = TAB_ORDER.map(d =>
     `<button class="navbtn ${d === curView ? 'active' : ''} ${d === TODAY.day && TODAY.inPlan ? 'today-mark' : ''}" data-day="${d}">${DAY_NAMES[d]}</button>`).join('');
   $dayNav.innerHTML = dayBtns +
     `<button class="navbtn ${curView === 'diary' ? 'active' : ''}" data-day="diary">ДНЕВ<br>НИК</button>` +
@@ -111,7 +111,7 @@ function exRow(ex, wn, d, bi, ei) {
 
 function renderDay() {
   const wk = WEEKS[curWeek - 1];
-  const d = wk.days[curView];
+  const d = wk.days[REAL_TO_PROG[curView] || curView];
   const isToday = TODAY.inPlan && curWeek === TODAY.week && curView === TODAY.day;
 
   let html = `<div class="weekinfo px">
@@ -121,7 +121,7 @@ function renderDay() {
   </div>
   <div class="dayhead px">
     <h2>${esc(d.title)}${isToday ? '<span class="today-badge">СЕГОДНЯ</span>' : ''}</h2>
-    <div class="meta"><span>фокус: <b>${esc(d.focus)}</b></span><span>время: <b>${esc(d.dur)}</b></span></div>
+    <div class="meta"><span><b>${DAY_NAMES[curView]}</b> · день ${TAB_ORDER.indexOf(curView) + 1} программы</span><span>фокус: <b>${esc(d.focus)}</b></span><span>время: <b>${esc(d.dur)}</b></span></div>
   </div>`;
 
   if (d.rest) {
