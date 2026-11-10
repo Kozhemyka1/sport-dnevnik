@@ -1,0 +1,9 @@
+{
+  "name": "sport-dnevnik",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Пиксельный спорт-дневник: программа тренировок + журнал весов",
+  "scripts": {
+    "dev": "node server.js"
+  }
+}

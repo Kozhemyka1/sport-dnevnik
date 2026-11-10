@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>СПОРТ.ДНЕВНИК — ноябрь 2026</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg: #000000;
+  --panel: #0a0a0a;
+  --line: #2e2e2e;
+  --line-dim: #1c1c1c;
+  --text: #9a9a9a;
+  --text-dim: #5c5c5c;
+  --text-bright: #d4d4d4;
+  --accent: #7dd87d;
+  --accent-dim: #2a4a2a;
+  --warn: #d8b87d;
+  --px-head: 'Press Start 2P', monospace;
+  --px-body: 'VT323', monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{background:var(--bg)}
+body{
+  font-family:var(--px-body);
+  font-size:21px;
+  line-height:1.45;
+  color:var(--text);
+  background:var(--bg);
+  min-height:100dvh;
+}
+/* лёгкий эффект ЭЛТ-строк */
+body::after{
+  content:"";position:fixed;inset:0;pointer-events:none;z-index:50;
+  background:repeating-linear-gradient(0deg,transparent 0 3px,rgba(255,255,255,.014) 3px 4px);
+}
+::selection{background:var(--accent-dim);color:var(--text-bright)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+button{cursor:pointer;font-family:inherit}
+
+.px{border:2px solid var(--line);background:var(--panel);box-shadow:4px 4px 0 #141414}
+.wrap{max-width:860px;margin:0 auto;padding:16px 14px 80px}
+
+h1,h2,h3{font-family:var(--px-head);color:var(--text-bright);font-weight:400}
+h1{font-size:15px;letter-spacing:1px}
+h2{font-size:11px}
+h3{font-size:9px}
+
+header.top{
+  display:flex;align-items:center;justify-content:space-between;gap:12px;
+  flex-wrap:wrap;margin-bottom:18px;padding:14px 16px;
+}
+.title-dot{color:var(--accent)}
+.blink{animation:blink 1.1s steps(2,start) infinite}
+@keyframes blink{to{visibility:hidden}}
+.date-now{font-size:19px;color:var(--text-dim);text-align:right;line-height:1.25}
+.date-now b{color:var(--text);font-weight:400}
+
+nav.weeks{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:8px}
+nav.days{display:grid;grid-template-columns:repeat(9,1fr);gap:8px;margin-bottom:18px}
+.navbtn{
+  font-family:var(--px-head);font-size:9px;padding:11px 4px;
+  color:var(--text-dim);background:var(--panel);border:2px solid var(--line);
+  box-shadow:3px 3px 0 #141414;text-transform:uppercase;
+}
+.navbtn small{display:block;font-family:var(--px-body);font-size:16px;text-transform:none;margin-top:5px;color:inherit;opacity:.75}
+.navbtn:hover{color:var(--text-bright);border-color:var(--text-dim)}
+.navbtn:active{transform:translate(2px,2px);box-shadow:1px 1px 0 #141414}
+.navbtn.active{color:var(--accent);border-color:var(--accent);text-shadow:0 0 6px rgba(125,216,125,.4)}
+.navbtn.today-mark{position:relative}
+.navbtn.today-mark::after{content:"▸";position:absolute;top:1px;right:3px;color:var(--accent);font-size:10px}
+
+.weekinfo{padding:12px 16px;margin-bottom:14px;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:baseline}
+.weekinfo .theme{color:var(--text-bright);font-size:22px}
+.weekinfo .rpe{color:var(--warn);font-size:20px}
+.weekinfo .hint{width:100%;color:var(--text-dim);font-size:19px}
+
+.dayhead{padding:14px 16px 12px;margin-bottom:14px}
+.dayhead h2{font-size:12px;margin-bottom:8px;line-height:1.7}
+.dayhead .meta{color:var(--text-dim);font-size:19px}
+.dayhead .meta span{margin-right:14px}
+.dayhead .meta b{color:var(--warn);font-weight:400}
+.today-badge{
+  font-family:var(--px-head);font-size:8px;color:var(--accent);
+  border:1px solid var(--accent);padding:3px 6px;margin-left:10px;vertical-align:middle;
+}
+
+section.block{margin-bottom:14px}
+.block-head{
+  padding:10px 14px;border-bottom:2px solid var(--line);
+  display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;
+}
+.block-head h3{line-height:1.8}
+.block-note{padding:8px 14px 0;color:var(--warn);font-size:19px}
+
+.ex{border-bottom:1px dashed var(--line-dim);padding:9px 14px}
+.ex:last-child{border-bottom:none}
+.ex-row{display:flex;align-items:flex-start;gap:8px}
+.ex-name{color:var(--text-bright);font-size:22px;line-height:1.3;flex:0 0 auto}
+.ex-scheme{color:var(--text-dim);font-size:19px;flex:1 1 auto;min-width:120px}
+.qbtn{
+  font-family:var(--px-head);font-size:9px;width:26px;height:26px;flex:0 0 auto;
+  color:var(--text-dim);background:transparent;border:2px solid var(--line);
+}
+.qbtn:hover{color:var(--accent);border-color:var(--accent)}
+.qbtn:active{transform:translate(1px,1px)}
+
+.logrow{display:flex;gap:8px;align-items:center;margin-top:7px;flex-wrap:wrap}
+.logrow label{font-size:17px;color:var(--text-dim)}
+.logrow input{
+  font-family:var(--px-body);font-size:20px;color:var(--text-bright);
+  background:#000;border:2px solid var(--line);padding:3px 8px;width:88px;
+}
+.logrow input.note{width:min(220px,100%)}
+.logrow input:focus{border-color:var(--accent);outline:none}
+.logbtn{
+  font-family:var(--px-head);font-size:8px;padding:8px 10px;
+  color:var(--accent);background:transparent;border:2px solid var(--accent-dim);
+}
+.logbtn:hover{border-color:var(--accent);text-shadow:0 0 6px rgba(125,216,125,.4)}
+.logbtn:active{transform:translate(1px,1px)}
+.lastlog{font-size:18px;color:var(--text-dim)}
+.lastlog b{color:var(--accent);font-weight:400}
+
+details.px summary{
+  font-family:var(--px-head);font-size:9px;color:var(--text);padding:11px 14px;
+  cursor:pointer;list-style:none;user-select:none;
+}
+details.px summary::before{content:"▸ ";color:var(--accent)}
+details.px[open] summary::before{content:"▾ "}
+details.px summary:hover{color:var(--text-bright)}
+details.px ul{padding:2px 18px 12px 30px}
+details.px li{padding:2px 0;color:var(--text);font-size:20px}
+details.px li::marker{content:"■ ";color:var(--line);font-size:12px}
+
+/* модалка */
+.modal-back{
+  position:fixed;inset:0;background:rgba(0,0,0,.78);z-index:90;
+  display:flex;align-items:center;justify-content:center;padding:18px;
+}
+.modal{max-width:520px;width:100%;padding:18px;position:relative}
+.modal h3{font-size:10px;margin-bottom:12px;line-height:1.9;color:var(--accent)}
+.modal p{font-size:21px;color:var(--text);line-height:1.5}
+.modal .x{
+  position:absolute;top:8px;right:10px;font-family:var(--px-head);font-size:10px;
+  color:var(--text-dim);background:none;border:none;padding:6px;
+}
+.modal .x:hover{color:var(--accent)}
+
+/* дневник */
+.diary-day{margin-bottom:14px}
+.diary-day .dhead{
+  padding:9px 14px;border-bottom:2px solid var(--line);
+  display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap;
+}
+.diary-day .dhead h3{color:var(--accent)}
+.diary-day .dhead span{color:var(--text-dim);font-size:18px}
+.dentry{padding:7px 14px;border-bottom:1px dashed var(--line-dim);display:flex;gap:10px;flex-wrap:wrap;align-items:baseline}
+.dentry:last-child{border-bottom:none}
+.dentry .n{color:var(--text-bright);font-size:20px}
+.dentry .w{color:var(--accent);font-size:20px}
+.dentry .c{color:var(--text-dim);font-size:18px;flex:1}
+.dentry .del{
+  font-family:var(--px-head);font-size:8px;color:var(--text-dim);
+  background:none;border:1px solid var(--line);padding:4px 6px;
+}
+.dentry .del:hover{color:#d87d7d;border-color:#d87d7d}
+.empty{padding:26px 14px;text-align:center;color:var(--text-dim);font-size:20px}
+
+.toolbar{display:flex;gap:8px;margin:18px 0 0;flex-wrap:wrap}
+.toolbtn{
+  font-family:var(--px-head);font-size:8px;padding:9px 12px;
+  color:var(--text-dim);background:var(--panel);border:2px solid var(--line);
+}
+.toolbtn:hover{color:var(--text-bright);border-color:var(--text-dim)}
+.toolbtn:active{transform:translate(1px,1px)}
+
+.restbox{padding:30px 16px;text-align:center}
+.restbox .big{font-family:var(--px-head);font-size:12px;color:var(--text-dim);line-height:2}
+
+footer{margin-top:34px;text-align:center;color:var(--line);font-size:17px}
+
+.toast{
+  position:fixed;left:50%;bottom:22px;transform:translateX(-50%);
+  font-family:var(--px-head);font-size:9px;color:var(--accent);
+  border:2px solid var(--accent-dim);background:#000;padding:10px 14px;z-index:99;
+  opacity:0;transition:opacity .18s;pointer-events:none;
+}
+.toast.show{opacity:1}
+
+.meas li{display:flex;gap:8px;align-items:flex-start}
+.meas input[type=checkbox]{width:16px;height:16px;accent-color:var(--accent);margin-top:4px;flex:0 0 auto}
+.meas li.done span{color:var(--text-dim);text-decoration:line-through}
+
+@media (max-width:640px){
+  body{font-size:19px}
+  nav.days{grid-template-columns:repeat(5,1fr)}
+  .ex-row{flex-wrap:wrap}
+  .ex-scheme{flex-basis:100%;order:3}
+}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top px">
+    <h1>СПОРТ<span class="title-dot">.</span>ДНЕВНИК<span class="blink title-dot">_</span></h1>
+    <div class="date-now" id="dateNow"></div>
+  </header>
+
+  <nav class="weeks" id="weekNav" aria-label="Недели"></nav>
+  <nav class="days" id="dayNav" aria-label="Дни"></nav>
+
+  <main id="view"></main>
+
+  <footer>ноябрь–декабрь 2026 · данные дневника хранятся локально в браузере</footer>
+</div>
+
+<div id="modalRoot"></div>
+<div class="toast" id="toast"></div>
+<input type="file" id="importFile" accept="application/json" hidden>
+
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>
