@@ -1,7 +1,7 @@
 // Программа тренировок: ноябрь–декабрь 2026, 4 недели
 // Источник: training_plan_november_2026.md
 
-export const START_DATE = '2026-11-09'; // понедельник недели 1
+export const START_DATE = '2026-11-11'; // первый день программы (день 1 = ПН плана)
 
 export const DAY_NAMES = {
   mon: 'ПН', tue: 'ВТ', wed: 'СР', thu: 'ЧТ', fri: 'ПТ', sat: 'СБ', sun: 'ВС',
