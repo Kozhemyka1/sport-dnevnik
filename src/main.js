@@ -210,19 +210,31 @@ function stopTimer() {
   timer.running = false;
 }
 
-function timerBeep() {
+function ensureAudio() {
   try {
-    timer.audio = timer.audio || new (window.AudioContext || window.webkitAudioContext)();
-    const ctx = timer.audio, t0 = ctx.currentTime;
-    [0, 0.25, 0.5].forEach(d => {
-      const o = ctx.createOscillator(), g = ctx.createGain();
-      o.type = 'square'; o.frequency.value = 880;
-      g.gain.setValueAtTime(0.07, t0 + d);
-      g.gain.exponentialRampToValueAtTime(0.0001, t0 + d + 0.18);
-      o.connect(g); g.connect(ctx.destination);
-      o.start(t0 + d); o.stop(t0 + d + 0.2);
-    });
-  } catch (e) { /* без звука */ }
+    if (!timer.audio) timer.audio = new (window.AudioContext || window.webkitAudioContext)();
+    if (timer.audio.state === 'suspended') timer.audio.resume();
+    return timer.audio;
+  } catch (e) { return null; }
+}
+
+function blip(freq, delay, dur, ctx, t0) {
+  const o = ctx.createOscillator(), g = ctx.createGain();
+  o.type = 'square'; o.frequency.value = freq;
+  g.gain.setValueAtTime(0.07, t0 + delay);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + delay + dur);
+  o.connect(g); g.connect(ctx.destination);
+  o.start(t0 + delay); o.stop(t0 + delay + dur + 0.02);
+}
+
+function timerBeep() {
+  const ctx = ensureAudio();
+  if (ctx) {
+    const t0 = ctx.currentTime;
+    blip(880, 0, 0.18, ctx, t0);
+    blip(880, 0.25, 0.18, ctx, t0);
+    blip(1320, 0.5, 0.35, ctx, t0);
+  }
   if (navigator.vibrate) navigator.vibrate([200, 100, 200, 100, 400]);
 }
 
@@ -268,6 +280,9 @@ function openTimer(name) {
     }
     if (timer.left <= 0) timer.left = timer.total;
     display.classList.remove('done');
+    // iOS: аудио-контекст активируем жестом пользователя + короткий сигнал-подтверждение
+    const ctx = ensureAudio();
+    if (ctx) blip(660, 0, 0.1, ctx, ctx.currentTime);
     timer.running = true;
     timer.endAt = Date.now() + timer.left * 1000;
     startBtn.textContent = 'ПАУЗА';
