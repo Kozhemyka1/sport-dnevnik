@@ -93,11 +93,13 @@ function exRow(ex, wn, d, bi, ei) {
   const id = `w${wn}-${d}-${bi}-${ei}`;
   const hasDescr = !!DESCR[ex.n];
   const last = lastLog(ex.n);
+  const timerSvg = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1zm0 2a5 5 0 1 1 0 10A5 5 0 0 1 8 3zM7 5h2v3h3v2H7z"/></svg>';
   return `<div class="ex" data-exid="${id}">
     <div class="ex-row">
       <span class="ex-name">${esc(ex.n)}</span>
       <span class="ex-scheme">${esc(ex.s)}</span>
       ${hasDescr ? `<button class="qbtn" data-q="${esc(ex.n)}" title="Описание упражнения" aria-label="Описание: ${esc(ex.n)}">?</button>` : ''}
+      <button class="qbtn timerbtn" data-timer="${esc(ex.n)}" title="Таймер" aria-label="Таймер: ${esc(ex.n)}">${timerSvg}</button>
     </div>
     ${ex.w ? `<div class="logrow">
       <label for="w-${id}">вес, кг</label>
@@ -155,6 +157,10 @@ function renderDay() {
   $view.querySelectorAll('[data-q]').forEach(b =>
     b.addEventListener('click', () => openModal(b.dataset.q)));
 
+  // обработчики: таймер
+  $view.querySelectorAll('[data-timer]').forEach(b =>
+    b.addEventListener('click', () => openTimer(b.dataset.timer)));
+
   // обработчики: запись веса
   $view.querySelectorAll('[data-log]').forEach(btn =>
     btn.addEventListener('click', () => {
@@ -187,8 +193,106 @@ function openModal(name) {
   back.addEventListener('click', e => { if (e.target === back) closeModal(); });
   back.querySelector('.x').focus();
 }
-function closeModal() { $modalRoot.innerHTML = ''; }
+function closeModal() {
+  stopTimer();
+  $modalRoot.innerHTML = '';
+}
 document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+
+/* ---------- таймер ---------- */
+const TIMER_PRESETS = [30, 60, 90, 120, 150, 180, 240, 300];
+const timer = { total: 120, left: 120, running: false, int: null, endAt: 0, audio: null };
+
+function fmt(s) { return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; }
+
+function stopTimer() {
+  if (timer.int) { clearInterval(timer.int); timer.int = null; }
+  timer.running = false;
+}
+
+function timerBeep() {
+  try {
+    timer.audio = timer.audio || new (window.AudioContext || window.webkitAudioContext)();
+    const ctx = timer.audio, t0 = ctx.currentTime;
+    [0, 0.25, 0.5].forEach(d => {
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.type = 'square'; o.frequency.value = 880;
+      g.gain.setValueAtTime(0.07, t0 + d);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + d + 0.18);
+      o.connect(g); g.connect(ctx.destination);
+      o.start(t0 + d); o.stop(t0 + d + 0.2);
+    });
+  } catch (e) { /* без звука */ }
+  if (navigator.vibrate) navigator.vibrate([200, 100, 200, 100, 400]);
+}
+
+function openTimer(name) {
+  stopTimer();
+  timer.left = timer.total;
+  $modalRoot.innerHTML = `<div class="modal-back" role="dialog" aria-modal="true" aria-label="Таймер">
+    <div class="modal px timer-modal">
+      <button class="x" aria-label="Закрыть">X</button>
+      <div class="timer-name">${esc(name)}</div>
+      <div class="timer-display" id="tDisplay">${fmt(timer.left)}</div>
+      <div class="timer-presets">
+        ${TIMER_PRESETS.map(s => `<button class="tbtn ${s === timer.total ? 'sel' : ''}" data-preset="${s}">${fmt(s)}</button>`).join('')}
+      </div>
+      <div class="timer-controls">
+        <button class="tbtn go" id="tStart">СТАРТ</button>
+        <button class="tbtn" id="tReset">СБРОС</button>
+      </div>
+    </div>
+  </div>`;
+  const back = $modalRoot.firstElementChild;
+  back.querySelector('.x').addEventListener('click', closeModal);
+  back.addEventListener('click', e => { if (e.target === back) closeModal(); });
+
+  const display = back.querySelector('#tDisplay');
+  const startBtn = back.querySelector('#tStart');
+
+  back.querySelectorAll('[data-preset]').forEach(b =>
+    b.addEventListener('click', () => {
+      stopTimer();
+      timer.total = timer.left = +b.dataset.preset;
+      back.querySelectorAll('[data-preset]').forEach(x => x.classList.toggle('sel', x === b));
+      display.textContent = fmt(timer.left);
+      display.classList.remove('done');
+      startBtn.textContent = 'СТАРТ';
+    }));
+
+  startBtn.addEventListener('click', () => {
+    if (timer.running) {
+      stopTimer();
+      startBtn.textContent = 'СТАРТ';
+      return;
+    }
+    if (timer.left <= 0) timer.left = timer.total;
+    display.classList.remove('done');
+    timer.running = true;
+    timer.endAt = Date.now() + timer.left * 1000;
+    startBtn.textContent = 'ПАУЗА';
+    timer.int = setInterval(() => {
+      timer.left = Math.max(0, Math.round((timer.endAt - Date.now()) / 1000));
+      display.textContent = fmt(timer.left);
+      if (timer.left <= 0) {
+        stopTimer();
+        display.classList.add('done');
+        startBtn.textContent = 'СТАРТ';
+        timerBeep();
+      }
+    }, 250);
+  });
+
+  back.querySelector('#tReset').addEventListener('click', () => {
+    stopTimer();
+    timer.left = timer.total;
+    display.textContent = fmt(timer.left);
+    display.classList.remove('done');
+    startBtn.textContent = 'СТАРТ';
+  });
+
+  back.querySelector('.x').focus();
+}
 
 /* ---------- дневник ---------- */
 function renderDiary() {

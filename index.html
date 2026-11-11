@@ -101,7 +101,7 @@ section.block{margin-bottom:14px}
   padding:10px 14px;border-bottom:2px solid var(--line);
   display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;
 }
-.block-head h3{line-height:1.8}
+.block-head h3{line-height:1.8;min-width:0;overflow-wrap:anywhere;word-break:break-word}
 .block-note{padding:8px 14px 0;color:var(--warn);font-size:19px}
 
 .ex{border-bottom:1px dashed var(--line-dim);padding:9px 14px}
@@ -112,7 +112,9 @@ section.block{margin-bottom:14px}
 .qbtn{
   font-family:var(--px-head);font-size:9px;width:26px;height:26px;flex:0 0 auto;
   color:var(--text-dim);background:transparent;border:2px solid var(--line);
+  display:inline-flex;align-items:center;justify-content:center;
 }
+.qbtn svg{width:13px;height:13px;fill:currentColor;display:block}
 .qbtn:hover{color:var(--accent);border-color:var(--accent)}
 .qbtn:active{transform:translate(1px,1px)}
 
@@ -203,11 +205,36 @@ footer{margin-top:34px;text-align:center;color:var(--line);font-size:17px}
 .meas input[type=checkbox]{width:16px;height:16px;accent-color:var(--accent);margin-top:4px;flex:0 0 auto}
 .meas li.done span{color:var(--text-dim);text-decoration:line-through}
 
+/* таймер */
+.timer-modal{max-width:380px}
+.timer-name{font-family:var(--px-head);font-size:9px;color:var(--accent);text-align:center;line-height:1.9;margin-bottom:10px;overflow-wrap:anywhere}
+.timer-display{
+  font-family:var(--px-body);font-size:76px;line-height:1;color:var(--text-bright);
+  text-align:center;padding:6px 0 12px;font-variant-numeric:tabular-nums;
+}
+.timer-display.done{color:var(--accent);animation:blink .5s steps(2,start) 6}
+.timer-presets{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px}
+.timer-controls{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.tbtn{
+  font-family:var(--px-head);font-size:9px;padding:12px 4px;
+  color:var(--text);background:var(--panel);border:2px solid var(--line);
+}
+.tbtn:hover{color:var(--text-bright);border-color:var(--text-dim)}
+.tbtn:active{transform:translate(1px,1px)}
+.tbtn.sel{color:var(--accent);border-color:var(--accent)}
+.tbtn.go{color:var(--accent);border-color:var(--accent-dim)}
+.tbtn.go:hover{border-color:var(--accent)}
+
 @media (max-width:640px){
   body{font-size:19px}
   nav.days{grid-template-columns:repeat(5,1fr)}
+  h2{font-size:10px}
+  h3{font-size:8px}
+  .block-note{font-size:18px}
   .ex-row{flex-wrap:wrap}
   .ex-scheme{flex-basis:100%;order:3}
+  .ex-name{font-size:20px;max-width:calc(100% - 70px)}
+  .timer-display{font-size:64px}
 }
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>

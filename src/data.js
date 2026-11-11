@@ -1,18 +1,18 @@
 // Программа тренировок: ноябрь–декабрь 2026, 4 недели
 // Источник: training_plan_november_2026.md
 
-export const START_DATE = '2026-11-11'; // первый день программы (день 1 = ПН плана)
+export const START_DATE = '2026-11-12'; // первый день программы (день 1 = ЧТ)
 
 export const DAY_NAMES = {
   mon: 'ПН', tue: 'ВТ', wed: 'СР', thu: 'ЧТ', fri: 'ПТ', sat: 'СБ', sun: 'ВС',
 };
 export const DAY_ORDER = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
 
-// Неделя программы идёт со среды (старт 11.11.2026):
-// день 1 = СР (толчок ДЦ), день 7 = ВТ (отдых)
-export const TAB_ORDER = ['wed', 'thu', 'fri', 'sat', 'sun', 'mon', 'tue'];
+// Неделя программы идёт с четверга (старт 12.11.2026):
+// день 1 = ЧТ (толчок ДЦ), день 7 = СР (отдых)
+export const TAB_ORDER = ['thu', 'fri', 'sat', 'sun', 'mon', 'tue', 'wed'];
 export const REAL_TO_PROG = {
-  wed: 'mon', thu: 'tue', fri: 'wed', sat: 'thu', sun: 'fri', mon: 'sat', tue: 'sun',
+  thu: 'mon', fri: 'tue', sat: 'wed', sun: 'thu', mon: 'fri', tue: 'sat', wed: 'sun',
 };
 
 // Краткие описания упражнений (кнопка "?")
