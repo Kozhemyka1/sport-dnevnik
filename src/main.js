@@ -126,19 +126,13 @@ function renderDay() {
     <div class="meta"><span><b>${DAY_NAMES[curView]}</b> · день ${TAB_ORDER.indexOf(curView) + 1} программы</span><span>фокус: <b>${esc(d.focus)}</b></span><span>время: <b>${esc(d.dur)}</b></span></div>
   </div>`;
 
-  if (d.rest) {
+  if (d.rest && !d.blocks.length) {
     html += `<section class="block px"><div class="restbox"><div class="big">ОТДЫХ<br><br>сон · еда · прогулка<br>мягкая растяжка по желанию</div></div></section>`;
   } else {
-    const isKbDay = /гирев|рывок|толчок|комплекс/i.test(d.title);
-    const warm = isKbDay ? WARMUP : {
-      title: 'Разминка (8–10 мин)',
-      items: [
-        'Суставная гимнастика: шея → плечи → таз → колени → голеностоп — по 30 сек',
-        '3–5 мин лёгкого кардио (гребля/аэробайк), пульс ~120',
-        '2–3 движения из основной части в лёгком варианте',
-      ],
-    };
-    html += `<details class="px block"><summary>${esc(warm.title)}</summary><ul>${warm.items.map(i => `<li>${esc(i)}</li>`).join('')}</ul></details>`;
+    if (!d.rest) {
+      const warmItems = d.warmNote ? [...WARMUP.items, 'Акцент дня: ' + d.warmNote] : WARMUP.items;
+      html += `<details class="px block"><summary>${esc(WARMUP.title)}</summary><ul>${warmItems.map(i => `<li>${esc(i)}</li>`).join('')}</ul></details>`;
+    }
 
     d.blocks.forEach((b, bi) => {
       html += `<section class="block px">
@@ -148,7 +142,10 @@ function renderDay() {
       </section>`;
     });
 
-    html += `<details class="px block"><summary>${esc(COOLDOWN.title)}</summary><ul>${COOLDOWN.items.map(i => `<li>${esc(i)}</li>`).join('')}</ul></details>`;
+    if (!d.rest) {
+      const cool = d.cool || COOLDOWN;
+      html += `<details class="px block"><summary>${esc(cool.title)}</summary><ul>${cool.items.map(i => `<li>${esc(i)}</li>`).join('')}</ul></details>`;
+    }
   }
 
   $view.innerHTML = html;
