@@ -190,18 +190,7 @@ async def describe_ep(body: DescribeIn, req: Request):
     if not GROQ_API_KEY:
         return JSONResponse({'error': 'no_groq_key'}, status_code=503)
     try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            r = await client.post(
-                'https://api.groq.com/openai/v1/chat/completions',
-                headers={'Authorization': f'Bearer {GROQ_API_KEY}'},
-                json={
-                    'model': GROQ_MODEL,
-                    'messages': [{'role': 'user', 'content': DESCRIBE_PROMPT.format(name=name)}],
-                    'temperature': 0.3,
-                    'max_tokens': 300,
-                })
-            r.raise_for_status()
-            descr = r.json()['choices'][0]['message']['content'].strip()
+        descr = (await groq_chat(DESCRIBE_PROMPT.format(name=name), 300, temperature=0.3, json_mode=False)).strip()
     except Exception:
         return JSONResponse({'error': 'groq_failed'}, status_code=502)
     with closing(db()) as c:
@@ -308,7 +297,7 @@ PREAMBLE_PROMPT = '''Ты — парсер общих блоков програ�
 Текст:
 '''
 
-async def groq_chat(prompt: str, max_tokens: int, temperature: float = 0.1) -> str:
+async def groq_chat(prompt: str, max_tokens: int, temperature: float = 0.1, json_mode: bool = True) -> str:
     """Один запрос к Groq. На 429 переключается на запасную модель (у неё свой лимит),
     если все упёрлись — пауза и второй круг."""
     models = [GROQ_MODEL] + [m for m in GROQ_FALLBACK_MODELS if m != GROQ_MODEL]
@@ -320,8 +309,9 @@ async def groq_chat(prompt: str, max_tokens: int, temperature: float = 0.1) -> s
                 'messages': [{'role': 'user', 'content': prompt}],
                 'temperature': temperature,
                 'max_tokens': max_tokens,
-                'response_format': {'type': 'json_object'},
             }
+            if json_mode:
+                payload['response_format'] = {'type': 'json_object'}
             if 'gpt-oss' in model:
                 payload['reasoning_effort'] = 'low'  # не жечь токены на размышления
             try:
