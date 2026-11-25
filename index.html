@@ -21,8 +21,8 @@
   --panel: #0a0a0a;
   --line: #2e2e2e;
   --line-dim: #1c1c1c;
-  --text: #9a9a9a;
-  --text-dim: #5c5c5c;
+  --text: #ababab;
+  --text-dim: #737373;
   --text-bright: #d4d4d4;
   --accent: #7dd87d;
   --accent-dim: #2a4a2a;
@@ -35,12 +35,12 @@
 /* темы оформления */
 body[data-theme="amber"]{
   --panel:#0b0803; --line:#3a2a12; --line-dim:#241a0c;
-  --text:#c9a25c; --text-dim:#7a6033; --text-bright:#f2dda6;
+  --text:#ddb76f; --text-dim:#9c7d4a; --text-bright:#f7e6b8;
   --accent:#ffb000; --accent-dim:#5a3f00; --warn:#ffe1a1; --danger:#e08080;
 }
 body[data-theme="blue"]{
   --panel:#04070c; --line:#16304e; --line-dim:#0d1c2e;
-  --text:#7fa3cf; --text-dim:#48678f; --text-bright:#d2e4f9;
+  --text:#9cbde6; --text-dim:#6485ad; --text-bright:#e0eafa;
   --accent:#4da3ff; --accent-dim:#1a3a5c; --warn:#9fd6ff; --danger:#e08080;
 }
 body[data-theme="pink"]{
@@ -158,7 +158,7 @@ section.block{margin-bottom:14px}
 .logrow label{font-size:17px;color:var(--text-dim)}
 .logrow input{
   font-family:var(--px-body);font-size:20px;color:var(--text-bright);
-  background:#000;border:2px solid var(--line);padding:3px 8px;width:88px;
+  background:var(--bg);border:2px solid var(--line);padding:3px 8px;width:88px;
 }
 .logrow input.note{width:min(220px,100%)}
 .logrow input:focus{border-color:var(--accent);outline:none}
