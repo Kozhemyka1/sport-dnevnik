@@ -18,7 +18,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.environ.get('SPORT_DB', os.path.join(BASE_DIR, 'data.db'))
 WEB_DIR = os.environ.get('SPORT_WEB', os.path.join(BASE_DIR, 'web'))
 GROQ_API_KEY = os.environ.get('GROQ_API_KEY', '')
-GROQ_MODEL = os.environ.get('GROQ_MODEL', 'llama-3.3-70b-versatile')
+GROQ_MODEL = os.environ.get('GROQ_MODEL', 'openai/gpt-oss-120b')
 TOKEN_TTL = 30 * 24 * 3600  # 30 дней
 
 app = FastAPI(title='sport-dnevnik')
@@ -204,6 +204,122 @@ async def describe_ep(body: DescribeIn, req: Request):
         c.execute('INSERT OR REPLACE INTO descr_cache VALUES(?,?,?)', (name, descr, int(time.time())))
         c.commit()
     return {'description': descr, 'cached': False}
+
+# ---------- импорт программы из файла ----------
+
+IMPORT_PROMPT = '''Ты — парсер программ тренировок. Тебе дают текст программы (русский, может быть таблица или список).
+Верни ТОЛЬКО JSON вида {"weeks":[...]} без пояснений. Схема недели:
+{"n":1,"theme":"название недели","rpe":"нагрузка, например RPE 6–7 · 16 кг","hint":"короткая заметка к неделе",
+"days":{"d1":{день},"d2":{день},"d3":{день},"d4":{день},"rest":{день отдыха}}}
+Схема дня: {"title":"День 1 · название","focus":"фокус","dur":"время, например 60 мин",
+"blocks":[{"t":"название блока","items":[{"n":"упражнение","s":"схема: подходы×повторы · вес · отдых","w":true}]}]}
+Правила:
+- тренировочных дней в неделе 1–4: раскладывай их по d1..d4 по порядку; если дней меньше 4 — оставшиеся сделай днями отдыха.
+- день отдыха: {"title":"Отдых + мобилити","focus":"Восстановление","dur":"","rest":true,"blocks":[]}.
+- "w": true, если упражнение с весом (гири, гантели, штанга); иначе false.
+- "s" собирай из текста максимально коротко: "3×10 · 16 кг · отдых 60 с".
+- если недель в тексте несколько — верни ВСЕ по порядку, нумерация n с 1, не пропускай ни одной.
+- верни ВСЕ упражнения каждого дня, не сокращай.
+- ничего не выдумывай: чего нет в тексте — оставляй пустым.
+Текст программы:
+'''
+
+def normalize_program(data):
+    """Приводит ответ модели к нашей схеме; возвращает None, если совсем мимо."""
+    try:
+        weeks = data['weeks']
+        assert isinstance(weeks, list) and weeks
+    except Exception:
+        return None
+    out = []
+    for i, w in enumerate(weeks):
+        if not isinstance(w, dict):
+            continue
+        week = {
+            'n': i + 1,
+            'theme': str(w.get('theme') or f'Неделя {i + 1}')[:80],
+            'rpe': str(w.get('rpe') or '')[:80],
+            'hint': str(w.get('hint') or '')[:300],
+            'days': {},
+        }
+        days_in = w.get('days') if isinstance(w.get('days'), dict) else {}
+        for key in ('d1', 'd2', 'd3', 'd4', 'rest'):
+            d = days_in.get(key)
+            if not isinstance(d, dict):
+                d = {}
+            day = {
+                'title': str(d.get('title') or ('Отдых' if key == 'rest' else f'День {key[1]}'))[:80],
+                'focus': str(d.get('focus') or '')[:60],
+                'dur': str(d.get('dur') or '')[:30],
+                'blocks': [],
+            }
+            if d.get('rest') or key == 'rest':
+                day['rest'] = True
+            for b in (d.get('blocks') if isinstance(d.get('blocks'), list) else []):
+                if not isinstance(b, dict):
+                    continue
+                block = {'t': str(b.get('t') or 'Основная часть')[:60], 'items': []}
+                for ex in (b.get('items') if isinstance(b.get('items'), list) else []):
+                    if not isinstance(ex, dict) or not ex.get('n'):
+                        continue
+                    block['items'].append({
+                        'n': str(ex['n'])[:120],
+                        's': str(ex.get('s') or '')[:200],
+                        'w': bool(ex.get('w')),
+                    })
+                if block['items']:
+                    day['blocks'].append(block)
+            if key != 'rest' and not day['blocks']:
+                day['rest'] = True  # день без упражнений — это отдых
+            week['days'][key] = day
+        out.append(week)
+    return out or None
+
+@app.post('/api/import-program')
+async def import_program_ep(req: Request):
+    login, err = require(req)
+    if err: return err
+    if not GROQ_API_KEY:
+        return JSONResponse({'error': 'no_groq_key'}, status_code=503)
+    fname = (req.headers.get('x-filename') or 'program.txt').lower()
+    raw = await req.body()
+    if not raw or len(raw) > 3_000_000:
+        return JSONResponse({'error': 'bad_file'}, status_code=400)
+    if fname.endswith('.docx'):
+        try:
+            import docx, io
+            doc = docx.Document(io.BytesIO(raw))
+            text = '\n'.join(p.text for p in doc.paragraphs if p.text.strip())
+            for tbl in doc.tables:
+                for row_ in tbl.rows:
+                    text += '\n' + ' | '.join(c.text.strip() for c in row_.cells)
+        except Exception:
+            return JSONResponse({'error': 'bad_file'}, status_code=400)
+    else:
+        text = raw.decode('utf-8', errors='replace')
+    text = text[:15000]
+    if len(text.strip()) < 30:
+        return JSONResponse({'error': 'empty'}, status_code=400)
+    try:
+        async with httpx.AsyncClient(timeout=60) as client:
+            r = await client.post(
+                'https://api.groq.com/openai/v1/chat/completions',
+                headers={'Authorization': f'Bearer {GROQ_API_KEY}'},
+                json={
+                    'model': GROQ_MODEL,
+                    'messages': [{'role': 'user', 'content': IMPORT_PROMPT + text}],
+                    'temperature': 0.1,
+                    'max_tokens': 8000,
+                    'response_format': {'type': 'json_object'},
+                })
+            r.raise_for_status()
+            content = r.json()['choices'][0]['message']['content']
+        program = normalize_program(json.loads(content))
+    except Exception:
+        return JSONResponse({'error': 'parse_failed'}, status_code=502)
+    if not program:
+        return JSONResponse({'error': 'parse_failed'}, status_code=502)
+    return {'program': program}
 
 # ---------- статика (само приложение) ----------
 

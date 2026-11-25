@@ -249,6 +249,7 @@ function renderDay() {
       <div class="toolbar">
         <button class="toolbtn" id="btnNewWeek">+ СОЗДАТЬ НЕДЕЛЮ 1</button>
         <button class="toolbtn" id="btnLoadBase">▼ ЗАГРУЗИТЬ БАЗОВУЮ</button>
+        <button class="toolbtn" id="btnImportProg">▲ ИМПОРТ ИЗ ФАЙЛА</button>
       </div>`;
     document.getElementById('btnNewWeek').addEventListener('click', () => {
       programOverride = [newWeek(1)];
@@ -258,6 +259,8 @@ function renderDay() {
       programOverride = JSON.parse(JSON.stringify(WEEKS));
       saveProgram(); render();
     });
+    document.getElementById('btnImportProg').addEventListener('click', () =>
+      document.getElementById('progFile').click());
     return;
   }
 
@@ -337,6 +340,7 @@ function renderDayEdit(P, wk, d) {
     <label class="elabel">заметка к неделе</label><div data-ebind="wk.hint">${inp(wk.hint, 'короткая подсказка')}</div>
     <div class="toolbar">
       <button class="toolbtn" id="btnAddWeek">+ НЕДЕЛЯ</button>
+      <button class="toolbtn" id="btnImportProg">▲ ИМПОРТ ИЗ ФАЙЛА</button>
       <button class="toolbtn danger" id="btnDelWeek">УДАЛИТЬ НЕДЕЛЮ ${wk.n}</button>
     </div>
   </section>
@@ -396,6 +400,8 @@ function renderDayEdit(P, wk, d) {
   document.getElementById('btnAddWeek').addEventListener('click', () => {
     P.push(newWeek(P.length + 1)); saveProgram(); curWeek = P.length; render();
   });
+  document.getElementById('btnImportProg').addEventListener('click', () =>
+    document.getElementById('progFile').click());
   document.getElementById('btnDelWeek').addEventListener('click', () => {
     P.splice(curWeek - 1, 1); renumberWeeks(P);
     curWeek = Math.max(1, Math.min(curWeek, P.length));
@@ -647,6 +653,60 @@ document.getElementById('importFile').addEventListener('change', e => {
   };
   r.readAsText(f);
   e.target.value = '';
+});
+
+/* ---------- импорт программы из файла ---------- */
+function showProgModal(html) {
+  $modalRoot.innerHTML = `<div class="modal-back" role="dialog" aria-modal="true">
+    <div class="modal px">${html}</div></div>`;
+  const back = $modalRoot.firstElementChild;
+  back.addEventListener('click', e => { if (e.target === back) closeModal(); });
+  return back;
+}
+
+async function importProgramFile(f) {
+  showProgModal(`<h3>ИМПОРТ ПРОГРАММЫ</h3><p>…разбираю файл через Groq, это 5–20 секунд…</p>`);
+  let d = null;
+  try {
+    const ext = (f.name.split('.').pop() || 'txt').toLowerCase();
+    const r = await api('/api/import-program', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/octet-stream', 'x-filename': 'program.' + ext },
+      body: f,
+    });
+    d = await r.json().catch(() => ({}));
+    if (!r.ok) d = { error: d.error || 'server' };
+  } catch (e) { d = { error: 'server' }; }
+  if (d.error) {
+    const msgs = {
+      no_groq_key: 'на сервере нет ключа Groq', bad_file: 'не смог прочитать файл',
+      empty: 'файл пустой', parse_failed: 'не удалось распознать программу — попробуй другой файл',
+      server: 'сервер недоступен',
+    };
+    const back = showProgModal(`<h3>ИМПОРТ ПРОГРАММЫ</h3><p>${msgs[d.error] || d.error}</p>
+      <div class="toolbar"><button class="toolbtn" data-x>ЗАКРЫТЬ</button></div>`);
+    back.querySelector('[data-x]').addEventListener('click', closeModal);
+    return;
+  }
+  const weeks = d.program;
+  const list = weeks.map(w => `неделя ${w.n}: ${esc(w.theme)}`).join('<br>');
+  const back = showProgModal(`<h3>ИМПОРТ ПРОГРАММЫ</h3>
+    <p>распознано недель: <b>${weeks.length}</b></p>
+    <p style="color:var(--text-dim);font-size:18px">${list}</p>
+    <p style="color:var(--warn);font-size:18px">заменит текущую программу</p>
+    <div class="toolbar"><button class="toolbtn" data-ok>ПРИМЕНИТЬ</button><button class="toolbtn" data-x>ОТМЕНА</button></div>`);
+  back.querySelector('[data-x]').addEventListener('click', closeModal);
+  back.querySelector('[data-ok]').addEventListener('click', () => {
+    programOverride = weeks;
+    curWeek = 1; saveProgram(); closeModal(); render();
+    toast('ПРОГРАММА ИМПОРТИРОВАНА ▲');
+  });
+}
+
+document.getElementById('progFile').addEventListener('change', e => {
+  const f = e.target.files[0];
+  e.target.value = '';
+  if (f) importProgramFile(f);
 });
 
 /* ---------- инфо ---------- */
