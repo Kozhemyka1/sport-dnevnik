@@ -289,7 +289,8 @@ footer{margin-top:34px;text-align:center;color:var(--line);font-size:17px}
 
 /* выполнение дня / курсор */
 .donebar{display:flex;gap:10px;align-items:center;padding:10px 14px;flex-wrap:wrap}
-.donestatus{font-family:var(--px-head);font-size:9px;color:var(--text-dim)}
+input[type=date]{color-scheme:dark}
+body[data-theme="light"] input[type=date]{color-scheme:light}.donestatus{font-family:var(--px-head);font-size:9px;color:var(--text-dim)}
 .donestatus.done{color:var(--accent)}
 .donestatus.skipped{color:var(--danger)}
 .donestatus.wait{color:var(--warn)}

@@ -807,8 +807,12 @@ function renderInfo() {
   <div class="dayhead px"><h2>СТАРТ ЦИКЛА</h2></div>
   <section class="block px" style="padding:12px 14px">
     <div style="font-size:20px">день 1 программы: <b style="color:var(--accent);font-weight:400">${anchorIso().split('-').reverse().join('.')}</b>${store.startDate ? '' : ' <span style="color:var(--text-dim);font-size:16px">(по умолчанию)</span>'}</div>
-    <div style="font-size:18px;color:var(--text-dim);margin:6px 0">сдвинь, если начинаешь не во вторник — вся сетка переедет. отметки выполнения сбросятся</div>
+    <div style="font-size:18px;color:var(--text-dim);margin:6px 0">по умолчанию день 1 — понедельник; сдвинь, если начинаешь в другой день — вся сетка переедет. отметки выполнения сбросятся</div>
     <div class="toolbar"><button class="toolbtn" id="btnStartToday">▶ НАЧАТЬ С СЕГОДНЯ</button>${store.startDate ? '<button class="toolbtn danger" id="btnStartReset">СБРОС</button>' : ''}</div>
+    <div class="logrow" style="margin-top:10px">
+      <input type="date" id="startDatePick" value="${anchorIso()}" style="width:150px">
+      <button class="logbtn" id="btnStartDate">НАЧАТЬ С ДАТЫ</button>
+    </div>
   </section>
 
   <div class="dayhead px"><h2>ОФОРМЛЕНИЕ</h2></div>
@@ -866,6 +870,15 @@ function renderInfo() {
   const btnStartReset = document.getElementById('btnStartReset');
   if (btnStartReset) btnStartReset.addEventListener('click', () => {
     store.startDate = null; saveStore(); render();
+  });
+  const btnStartDate = document.getElementById('btnStartDate');
+  if (btnStartDate) btnStartDate.addEventListener('click', () => {
+    const v = document.getElementById('startDatePick').value;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) { toast('ВЫБЕРИ ДАТУ'); return; }
+    store.startDate = v;
+    store.done = {}; // новый старт — чистый прогресс
+    saveStore(); render();
+    toast('ДЕНЬ 1 — ' + v.slice(8) + '.' + v.slice(5, 7) + ' ▶');
   });
 
   $view.querySelectorAll('[data-theme-pick]').forEach(b =>
