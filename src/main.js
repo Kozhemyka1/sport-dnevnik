@@ -196,14 +196,15 @@ function renderNav() {
     </button>`).join('') +
     `<button class="navbtn editbtn ${editMode ? 'active' : ''}" data-edit="1" title="Режим правки программы">✎</button>`;
   $weekNav.querySelectorAll('[data-week]').forEach(b =>
-    b.addEventListener('click', () => { curWeek = +b.dataset.week; if (curView === 'diary' || curView === 'info') curView = TODAY.day; render(); }));
+    b.addEventListener('click', () => { curWeek = +b.dataset.week; if (curView === 'diary' || curView === 'info' || curView === 'import') curView = TODAY.day; render(); }));
   $weekNav.querySelector('[data-edit]').addEventListener('click', () => { editMode = !editMode; render(); });
 
   const dayBtns = TAB_ORDER.map(d =>
     `<button class="navbtn ${d === curView ? 'active' : ''} ${d === TODAY.day && TODAY.inPlan ? 'today-mark' : ''}" data-day="${d}">${DAY_NAMES[d]}</button>`).join('');
   $dayNav.innerHTML = dayBtns +
     `<button class="navbtn ${curView === 'diary' ? 'active' : ''}" data-day="diary">ДНЕВ<br>НИК</button>` +
-    `<button class="navbtn ${curView === 'info' ? 'active' : ''}" data-day="info">ИНФО</button>`;
+    `<button class="navbtn ${curView === 'info' ? 'active' : ''}" data-day="info">ИНФО</button>` +
+    `<button class="navbtn ${curView === 'import' ? 'active' : ''}" data-day="import">ИМП<br>ОРТ</button>`;
   $dayNav.querySelectorAll('button').forEach(b =>
     b.addEventListener('click', () => { curView = b.dataset.day; render(); }));
 }
@@ -655,6 +656,26 @@ document.getElementById('importFile').addEventListener('change', e => {
   e.target.value = '';
 });
 
+/* ---------- вкладка импорта программы ---------- */
+function renderImport() {
+  const P = PROG() || [];
+  $view.innerHTML = `<div class="dayhead px"><h2>ИМПОРТ ПРОГРАММЫ</h2>
+    <div class="meta"><span>месяц целиком, одним файлом</span></div></div>
+  <section class="block px" style="padding:14px">
+    <p style="font-size:20px">Скинь файл с программой — <b style="color:var(--warn);font-weight:400">.txt · .md · .docx</b></p>
+    <p style="font-size:18px;color:var(--text-dim);margin-top:8px">Groq сам разложит её по неделям и дням: названия, схемы, веса. Перед применением покажу, что распозналось. Разбор занимает 5–20 секунд.</p>
+    <p style="font-size:18px;color:var(--text-dim);margin-top:8px">Сейчас в программе: <b style="color:var(--text-bright);font-weight:400">${P.length ? P.length + ' нед.' : 'пусто'}</b></p>
+    <div class="toolbar" style="margin-top:12px">
+      <button class="toolbtn" id="btnImportProg">▲ ВЫБРАТЬ ФАЙЛ</button>
+    </div>
+  </section>
+  <section class="block px" style="padding:12px 14px">
+    <p style="font-size:18px;color:var(--text-dim)">Совет: чем чётче структура в файле (неделя → день → упражнения с подходами и весами), тем точнее разбор. После импорта всё можно поправить руками в режиме ✎.</p>
+  </section>`;
+  document.getElementById('btnImportProg').addEventListener('click', () =>
+    document.getElementById('progFile').click());
+}
+
 /* ---------- импорт программы из файла ---------- */
 function showProgModal(html) {
   $modalRoot.innerHTML = `<div class="modal-back" role="dialog" aria-modal="true">
@@ -698,7 +719,7 @@ async function importProgramFile(f) {
   back.querySelector('[data-x]').addEventListener('click', closeModal);
   back.querySelector('[data-ok]').addEventListener('click', () => {
     programOverride = weeks;
-    curWeek = 1; saveProgram(); closeModal(); render();
+    curWeek = 1; curView = TODAY.day; saveProgram(); closeModal(); render();
     toast('ПРОГРАММА ИМПОРТИРОВАНА ▲');
   });
 }
@@ -769,6 +790,7 @@ function render() {
   renderNav();
   if (curView === 'diary') renderDiary();
   else if (curView === 'info') renderInfo();
+  else if (curView === 'import') renderImport();
   else renderDay();
   window.scrollTo({ top: 0 });
 }
