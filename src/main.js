@@ -9,7 +9,10 @@ const LS_KEY = 'sportlog.v1';
 function loadStore() {
   try {
     const raw = localStorage.getItem(LS_KEY);
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const d = JSON.parse(raw);
+      return { entries: Array.isArray(d.entries) ? d.entries : [], meas: d.meas || {} };
+    }
   } catch (e) { /* повреждённые данные — начинаем с чистого */ }
   return { entries: [], meas: {} };
 }
@@ -95,7 +98,7 @@ async function syncInit() {
     }
     // если программы нет нигде — остаётся пустая, пользователь соберёт сам
     if (state.diary && Array.isArray(state.diary.entries) && state.diary.entries.length) {
-      store = state.diary; // сервер новее локального — сервер главный
+      store = { entries: state.diary.entries, meas: state.diary.meas || {} }; // сервер новее локального — сервер главный
       saveLocal();
     } else if (store.entries.length) {
       await pushState({ diary: store }); // на сервере пусто — заливаем локальный дневник
@@ -701,11 +704,43 @@ function renderInfo() {
 
 /* ---------- главный рендер ---------- */
 function render() {
+  if (!remote.token) { renderGate(); return; } // без входа — только экран логина
   renderNav();
   if (curView === 'diary') renderDiary();
   else if (curView === 'info') renderInfo();
   else renderDay();
   window.scrollTo({ top: 0 });
+}
+
+/* ---------- экран входа ---------- */
+function renderGate() {
+  $weekNav.innerHTML = '';
+  $dayNav.innerHTML = '';
+  $view.innerHTML = `<section class="block px gate">
+    <div class="gate-logo">СПОРТ<br>ДНЕВНИК</div>
+    <div class="gate-sub">введи логин и пароль</div>
+    <div class="logrow gate-row">
+      <input id="loginName" placeholder="логин" autocomplete="username" style="width:130px">
+      <input id="loginPass" type="password" placeholder="пароль" autocomplete="current-password" style="width:130px">
+      <button class="logbtn" id="btnLogin">ВОЙТИ</button>
+    </div>
+    <div id="loginErr" style="color:#d87d7d;font-size:18px;margin-top:6px"></div>
+  </section>`;
+  window.scrollTo({ top: 0 });
+
+  const err = document.getElementById('loginErr');
+  const submit = async () => {
+    const l = document.getElementById('loginName').value.trim();
+    const p = document.getElementById('loginPass').value;
+    if (!l || !p) { err.textContent = 'введи логин и пароль'; return; }
+    err.textContent = '…';
+    try { await doLogin(l, p); }
+    catch (e) { err.textContent = e.message || 'нет связи с сервером'; }
+  };
+  document.getElementById('btnLogin').addEventListener('click', submit);
+  $view.querySelectorAll('#loginName, #loginPass').forEach(el =>
+    el.addEventListener('keydown', e => { if (e.key === 'Enter') submit(); }));
+  document.getElementById('loginName').focus();
 }
 
 (async () => {
