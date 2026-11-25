@@ -21,6 +21,8 @@ DB_PATH = os.environ.get('SPORT_DB', os.path.join(BASE_DIR, 'data.db'))
 WEB_DIR = os.environ.get('SPORT_WEB', os.path.join(BASE_DIR, 'web'))
 GROQ_API_KEY = os.environ.get('GROQ_API_KEY', '')
 GROQ_MODEL = os.environ.get('GROQ_MODEL', 'openai/gpt-oss-120b')
+# у каждой модели на Groq свой дневной лимит: при 429 переключаемся на запасную
+GROQ_FALLBACK_MODELS = ['openai/gpt-oss-20b']
 TOKEN_TTL = 30 * 24 * 3600  # 30 дней
 
 app = FastAPI(title='sport-dnevnik')
@@ -213,17 +215,37 @@ IMPORT_PROMPT = '''Ты — парсер программ тренировок. 
 Верни ТОЛЬКО JSON вида {"weeks":[...]} без пояснений. Схема недели:
 {"n":1,"theme":"название недели","rpe":"нагрузка, например RPE 6–7 · 16 кг","hint":"короткая заметка к неделе",
 "days":{"d1":{день},"d2":{день},"d3":{день},"d4":{день},"rest":{день отдыха}}}
-Схема дня: {"title":"День 1 · название","focus":"фокус","dur":"время, например 60 мин",
+Схема дня:
+{"title":"День 1 · название","focus":"фокус","dur":"время, например 60 мин",
+"warm":{"title":"Разминка","items":["шаг разминки","..."]},
+"cool":{"title":"Заминка","items":["шаг заминки","..."]},
 "blocks":[{"t":"название блока","items":[{"n":"упражнение","s":"схема: подходы×повторы · вес · отдых","w":true}]}]}
 Правила:
-- тренировочных дней в неделе 1–4: раскладывай их по d1..d4 по порядку; если дней меньше 4 — оставшиеся сделай днями отдыха.
+- тренировочных дней в неделе 1–4: раскладывай их по d1..d4 ПО ПОРЯДКУ. Дни могут называться «День 1..4» или «Тренировка A/B/C/D» — это то же самое, просто по порядку. Если дней меньше 4 — оставшиеся сделай днями отдыха.
 - день отдыха: {"title":"Отдых + мобилити","focus":"Восстановление","dur":"","rest":true,"blocks":[]}.
-- "w": true, если упражнение с весом (гири, гантели, штанга); иначе false.
-- "s" собирай из текста максимально коротко: "3×10 · 16 кг · отдых 60 с".
+- ВАЖНО: внутренние части дня сохраняй как ОТДЕЛЬНЫЕ блоки со своими названиями из текста («Силовой блок», «EMOM 20 минут», «Плечи и корпус», «Кондиционер» и т.п.). Никогда не сливай весь день в один блок и не склеивай части в одно упражнение.
+- разминку дня клади в "warm" списком шагов, заминку — в "cool". Если в тексте не описаны — не добавляй эти поля вообще.
+- "w": true, если упражнение с весом (гири, гантели, штанга, медбол); иначе false.
+- "s" собирай из текста максимально коротко: "3×10 · 16 кг · отдых 60 с". Для EMOM пиши как в тексте: "минута 1: аэробайк 8 кал".
 - если недель в тексте несколько — верни ВСЕ по порядку, нумерация n с 1, не пропускай ни одной.
 - верни ВСЕ упражнения каждого дня, не сокращай.
 - ничего не выдумывай: чего нет в тексте — оставляй пустым.
 Текст программы:
+'''
+
+DAY_PROMPT = '''Ты — парсер программ тренировок. Тебе дают текст ОДНОГО тренировочного дня (русский).
+Верни ТОЛЬКО JSON вида {"day":{день}} без пояснений. Схема дня:
+{"title":"День 1 · название","focus":"фокус","dur":"время, например 60 мин",
+"warm":{"title":"Разминка","items":["шаг разминки","..."]},
+"cool":{"title":"Заминка","items":["шаг заминки","..."]},
+"blocks":[{"t":"название блока","items":[{"n":"упражнение","s":"схема: подходы×повторы · вес · отдых","w":true}]}]}
+Правила:
+- ВАЖНО: внутренние части дня сохраняй как ОТДЕЛЬНЫЕ блоки со своими названиями из текста («Силовой блок», «EMOM 20 минут», «Плечи и корпус» и т.п.). Никогда не сливай всё в один блок.
+- разминку дня клади в "warm" списком шагов, заминку — в "cool". Если в тексте не описаны — не добавляй эти поля вообще.
+- "w": true, если упражнение с весом (гири, гантели, штанга, медбол); иначе false.
+- "s" собирай из текста максимально коротко: "3×10 · 16 кг · отдых 60 с". Для EMOM пиши как в тексте: "минута 1: аэробайк 8 кал".
+- верни ВСЕ упражнения дня, не сокращай. Ничего не выдумывай.
+Текст дня:
 '''
 
 def docx_to_text(raw: bytes) -> str:
@@ -246,7 +268,7 @@ def docx_to_text(raw: bytes) -> str:
 
 def split_weeks(text: str):
     """Режет текст на куски по заголовкам 'Неделя N'. Возвращает (куски, преамбула)."""
-    parts = re.split(r'(?im)^\s*(?:\d+\s*[.\)]\s*)?(неделя\s*\d+\b[^\n]*)$', text)
+    parts = re.split(r'(?im)^\s*(?:\d+\s*[.\)]\s*)?(неделя\s*\d+\s*[—–·:\-][^\n]{0,70})$', text)
     pre = parts[0] if parts else ''
     if len(parts) < 3:
         return [text], ''
@@ -256,6 +278,22 @@ def split_weeks(text: str):
         if chunk.strip():
             out.append(chunk)
     return (out or [text]), pre
+
+def split_days(chunk: str):
+    """Режет текст недели на подкуски по заголовкам дней ('Тренировка A', 'День 2', '2A. ...').
+    Возвращает (шапка недели, [куски дней])."""
+    parts = re.split(
+        r'(?im)^\s*(?:\d\s*[A-DА-Г]?\s*[.\)]\s*)?((?:тренировка\s+[a-dа-г]|день\s*\d)\b[^\n|]{0,80})$',
+        chunk)
+    if len(parts) < 3:
+        return chunk, []
+    head = parts[0]
+    segs = []
+    for i in range(1, len(parts), 2):
+        seg = (parts[i] + '\n' + parts[i + 1]).strip()
+        if seg:
+            segs.append(seg)
+    return head, segs
 
 PREAMBLE_PROMPT = '''Ты — парсер общих блоков программы тренировок. Тебе дают вводную часть текста программы.
 Верни ТОЛЬКО JSON без пояснений:
@@ -270,51 +308,82 @@ PREAMBLE_PROMPT = '''Ты — парсер общих блоков програ�
 Текст:
 '''
 
+async def groq_chat(prompt: str, max_tokens: int, temperature: float = 0.1) -> str:
+    """Один запрос к Groq. На 429 переключается на запасную модель (у неё свой лимит),
+    если все упёрлись — пауза и второй круг."""
+    models = [GROQ_MODEL] + [m for m in GROQ_FALLBACK_MODELS if m != GROQ_MODEL]
+    last_err = None
+    for round_ in range(2):
+        for model in models:
+            payload = {
+                'model': model,
+                'messages': [{'role': 'user', 'content': prompt}],
+                'temperature': temperature,
+                'max_tokens': max_tokens,
+                'response_format': {'type': 'json_object'},
+            }
+            if 'gpt-oss' in model:
+                payload['reasoning_effort'] = 'low'  # не жечь токены на размышления
+            try:
+                async with httpx.AsyncClient(timeout=90) as client:
+                    r = await client.post(
+                        'https://api.groq.com/openai/v1/chat/completions',
+                        headers={'Authorization': f'Bearer {GROQ_API_KEY}'},
+                        json=payload)
+                    r.raise_for_status()
+                    return r.json()['choices'][0]['message']['content']
+            except httpx.HTTPStatusError as e:
+                last_err = e
+                if e.response.status_code == 429:
+                    continue
+                raise
+        if round_ == 0:
+            await asyncio.sleep(10)
+    raise last_err
+
 async def groq_parse_preamble(text: str) -> str:
     """Вводная часть -> JSON-строка с мобилити/разминкой/заминкой."""
-    async with httpx.AsyncClient(timeout=90) as client:
-        r = await client.post(
-            'https://api.groq.com/openai/v1/chat/completions',
-            headers={'Authorization': f'Bearer {GROQ_API_KEY}'},
-            json={
-                'model': GROQ_MODEL,
-                'messages': [{'role': 'user', 'content': PREAMBLE_PROMPT + text}],
-                'temperature': 0.1,
-                'max_tokens': 4000,
-                'response_format': {'type': 'json_object'},
-            })
-        r.raise_for_status()
-        return r.json()['choices'][0]['message']['content']
+    return await groq_chat(PREAMBLE_PROMPT + text, 4000)
 
 async def groq_parse_weeks(text: str) -> str:
-    """Один запрос к Groq: текст -> JSON-строка. 429 — ждём и повторяем."""
-    delay = 6.0
-    for attempt in range(4):
-        try:
-            async with httpx.AsyncClient(timeout=90) as client:
-                r = await client.post(
-                    'https://api.groq.com/openai/v1/chat/completions',
-                    headers={'Authorization': f'Bearer {GROQ_API_KEY}'},
-                    json={
-                        'model': GROQ_MODEL,
-                        'messages': [{'role': 'user', 'content': IMPORT_PROMPT + text}],
-                        'temperature': 0.1,
-                        'max_tokens': 8000,
-                        'response_format': {'type': 'json_object'},
-                    })
-                r.raise_for_status()
-                return r.json()['choices'][0]['message']['content']
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 429 and attempt < 3:
-                ra = e.response.headers.get('retry-after')
-                try:
-                    wait = float(ra) if ra else delay
-                except ValueError:
-                    wait = delay
-                await asyncio.sleep(min(wait, 30.0))
-                delay *= 2
+    """Текст недели -> JSON-строка с программой."""
+    return await groq_chat(IMPORT_PROMPT + text, 8000)
+
+def normalize_day(d, key):
+    """Один день из ответа модели -> наша схема."""
+    if not isinstance(d, dict):
+        d = {}
+    day = {
+        'title': str(d.get('title') or ('Отдых' if key == 'rest' else f'День {key[1]}'))[:80],
+        'focus': str(d.get('focus') or '')[:60],
+        'dur': str(d.get('dur') or '')[:30],
+        'blocks': [],
+    }
+    if d.get('rest') or key == 'rest':
+        day['rest'] = True
+    for field, deftitle in (('warm', 'Разминка'), ('cool', 'Заминка')):
+        src = d.get(field)
+        if isinstance(src, dict):
+            items = [str(x)[:200] for x in (src.get('items') or []) if str(x).strip()][:15]
+            if items:
+                day[field] = {'title': str(src.get('title') or deftitle)[:40], 'items': items}
+    for b in (d.get('blocks') if isinstance(d.get('blocks'), list) else []):
+        if not isinstance(b, dict):
+            continue
+        block = {'t': str(b.get('t') or 'Основная часть')[:60], 'items': []}
+        for ex in (b.get('items') if isinstance(b.get('items'), list) else []):
+            if not isinstance(ex, dict) or not ex.get('n'):
                 continue
-            raise
+            block['items'].append({
+                'n': str(ex['n'])[:120],
+                's': str(ex.get('s') or '')[:200],
+                'w': bool(ex.get('w')),
+            })
+        if block['items']:
+            day['blocks'].append(block)
+    if key != 'rest' and not day['blocks']:
+        day['rest'] = True  # день без упражнений — это отдых
+    return day
 
 def normalize_program(data):
     """Приводит ответ модели к нашей схеме; возвращает None, если совсем мимо."""
@@ -327,45 +396,57 @@ def normalize_program(data):
     for i, w in enumerate(weeks):
         if not isinstance(w, dict):
             continue
+        theme = str(w.get('theme') or '')[:80].strip()
         week = {
             'n': i + 1,
-            'theme': str(w.get('theme') or f'Неделя {i + 1}')[:80],
+            'theme': theme,
             'rpe': str(w.get('rpe') or '')[:80],
             'hint': str(w.get('hint') or '')[:300],
             'days': {},
         }
         days_in = w.get('days') if isinstance(w.get('days'), dict) else {}
         for key in ('d1', 'd2', 'd3', 'd4', 'rest'):
-            d = days_in.get(key)
-            if not isinstance(d, dict):
-                d = {}
-            day = {
-                'title': str(d.get('title') or ('Отдых' if key == 'rest' else f'День {key[1]}'))[:80],
-                'focus': str(d.get('focus') or '')[:60],
-                'dur': str(d.get('dur') or '')[:30],
-                'blocks': [],
-            }
-            if d.get('rest') or key == 'rest':
-                day['rest'] = True
-            for b in (d.get('blocks') if isinstance(d.get('blocks'), list) else []):
-                if not isinstance(b, dict):
-                    continue
-                block = {'t': str(b.get('t') or 'Основная часть')[:60], 'items': []}
-                for ex in (b.get('items') if isinstance(b.get('items'), list) else []):
-                    if not isinstance(ex, dict) or not ex.get('n'):
-                        continue
-                    block['items'].append({
-                        'n': str(ex['n'])[:120],
-                        's': str(ex.get('s') or '')[:200],
-                        'w': bool(ex.get('w')),
-                    })
-                if block['items']:
-                    day['blocks'].append(block)
-            if key != 'rest' and not day['blocks']:
-                day['rest'] = True  # день без упражнений — это отдых
-            week['days'][key] = day
+            week['days'][key] = normalize_day(days_in.get(key), key)
+        # пустая неделя-болванка (модель иногда догенерирует заглушки) — пропускаем
+        if not any(not dd.get('rest') and dd['blocks'] for dd in week['days'].values()):
+            continue
         out.append(week)
     return out or None
+
+def week_training_days(week) -> int:
+    return sum(1 for k in ('d1', 'd2', 'd3', 'd4') if not week['days'][k].get('rest'))
+
+async def parse_week_by_days(chunk: str, day_segs):
+    """Фолбэк: неделя собирается из отдельных запросов на каждый день.
+    Мелкие куски по зубам даже запасной модели."""
+    theme = chunk.split('\n', 1)[0].strip()[:80]
+    rpe_m = re.search(r'RPE\s*[\d–\-]+', chunk, re.I)
+    week = {
+        'n': 1,
+        'theme': theme,
+        'rpe': rpe_m.group(0) if rpe_m else '',
+        'hint': '',
+        'days': {},
+    }
+    keys = ['d1', 'd2', 'd3', 'd4']
+    di = 0
+    for seg in day_segs[:4]:
+        day = None
+        for _ in range(2):
+            try:
+                dd = json.loads(await groq_chat(DAY_PROMPT + seg[:9000], 3000))
+                day = normalize_day(dd.get('day'), keys[di])
+            except Exception:
+                day = None
+            if day and day['blocks']:
+                break
+        if day and day['blocks']:
+            week['days'][keys[di]] = day
+            di += 1
+    for k in keys[di:]:
+        week['days'][k] = normalize_day({'rest': True}, k)
+    week['days']['rest'] = normalize_day({}, 'rest')
+    return week if di else None
 
 @app.post('/api/import-program')
 async def import_program_ep(req: Request):
@@ -384,7 +465,7 @@ async def import_program_ep(req: Request):
             return JSONResponse({'error': 'bad_file'}, status_code=400)
     else:
         text = raw.decode('utf-8', errors='replace')
-    text = text[:20000]
+    text = text[:60000]  # недели парсятся кусками, полный текст не страшен
     if len(text.strip()) < 30:
         return JSONResponse({'error': 'empty'}, status_code=400)
     # длинный файл парсим по неделям: так модель ничего не теряет
@@ -413,6 +494,8 @@ async def import_program_ep(req: Request):
 
     program = []
     for chunk in chunks[:8]:  # максимум 8 недель
+        head, day_segs = split_days(chunk)
+        expected = min(len(day_segs), 4)  # сколько тренировочных дней видно в тексте
         part = None
         for _ in range(2):  # пустой/битый ответ — один повтор
             try:
@@ -422,6 +505,17 @@ async def import_program_ep(req: Request):
                 part = None
             if part:
                 break
+        # контроль полноты: если в тексте дней больше, чем распарсилось — добираем по дням
+        if expected:
+            got = week_training_days(part[0]) if part else 0
+            if got < expected:
+                by_days = None
+                try:
+                    by_days = await parse_week_by_days(chunk, day_segs)
+                except Exception:
+                    by_days = None
+                if by_days and week_training_days(by_days) > got:
+                    part = [by_days]
         if part:
             program.extend(part)
         else:
@@ -430,14 +524,16 @@ async def import_program_ep(req: Request):
         return JSONResponse({'error': 'parse_failed'}, status_code=502)
     for i, w in enumerate(program):
         w['n'] = i + 1  # сквозная нумерация после склейки
+        t = re.sub(r'(?i)^\s*неделя\s*\d+\s*[—–·:\-]?\s*', '', w['theme']).strip()
+        w['theme'] = f'Неделя {i + 1}' + (f' — {t}' if t else '')
         if mobility:
             w['days']['rest']['blocks'] = [{'t': 'Ежедневный минимум — мобилити', 'items': [dict(x) for x in mobility]}]
         for k in ('d1', 'd2', 'd3', 'd4'):
             d = w['days'][k]
             if not d.get('rest'):
-                if warm_steps:
+                if warm_steps and 'warm' not in d:
                     d['warm'] = {'title': 'Разминка', 'items': list(warm_steps)}
-                if cool_steps:
+                if cool_steps and 'cool' not in d:
                     d['cool'] = {'title': 'Заминка', 'items': list(cool_steps)}
     return {'program': program, 'skipped': failed}
 
