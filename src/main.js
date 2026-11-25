@@ -13,8 +13,94 @@ function loadStore() {
   } catch (e) { /* повреждённые данные — начинаем с чистого */ }
   return { entries: [], meas: {} };
 }
-function saveStore() { localStorage.setItem(LS_KEY, JSON.stringify(store)); }
+function saveLocal() { localStorage.setItem(LS_KEY, JSON.stringify(store)); }
+function saveStore() {
+  saveLocal();
+  queuePush();
+}
 let store = loadStore();
+
+/* ---------- синхронизация с сервером ---------- */
+const remote = {
+  token: localStorage.getItem('sportlog.token') || null,
+  login: localStorage.getItem('sportlog.login') || null,
+  online: false,
+};
+let programOverride = null; // программа с сервера (если есть) вместо встроенной
+const PROG = () => programOverride || WEEKS;
+
+async function api(path, opts = {}) {
+  const headers = { 'Content-Type': 'application/json', ...(opts.headers || {}) };
+  if (remote.token) headers['Authorization'] = 'Bearer ' + remote.token;
+  return fetch(path, { ...opts, headers });
+}
+
+async function pushState(patch) {
+  if (!remote.token) return;
+  const r = await api('/api/state', { method: 'PUT', body: JSON.stringify(patch) });
+  if (r.status === 401) { dropToken(); return; }
+  if (!r.ok) throw new Error('push failed');
+  remote.online = true;
+}
+
+let pushTimer = null;
+function queuePush() {
+  if (!remote.token) return;
+  clearTimeout(pushTimer);
+  pushTimer = setTimeout(async () => {
+    try { await pushState({ diary: store }); }
+    catch (e) { remote.online = false; } // офлайн — допушим при следующей записи
+  }, 800);
+}
+
+function dropToken() {
+  remote.token = null; remote.online = false;
+  localStorage.removeItem('sportlog.token');
+}
+
+async function syncInit() {
+  if (!remote.token) return;
+  try {
+    const r = await api('/api/state');
+    if (r.status === 401) { dropToken(); return; }
+    if (!r.ok) return;
+    remote.online = true;
+    const state = await r.json();
+    if (state.program) {
+      programOverride = state.program;
+      if (curWeek > PROG().length) curWeek = PROG().length;
+    } else {
+      await pushState({ program: WEEKS }); // первый вход: встроенная программа становится шаблоном аккаунта
+    }
+    if (state.diary && Array.isArray(state.diary.entries) && state.diary.entries.length) {
+      store = state.diary; // сервер новее локального — сервер главный
+      saveLocal();
+    } else if (store.entries.length) {
+      await pushState({ diary: store }); // на сервере пусто — заливаем локальный дневник
+    }
+  } catch (e) { remote.online = false; }
+}
+
+async function doLogin(login, password) {
+  const r = await api('/api/login', { method: 'POST', body: JSON.stringify({ login, password }) });
+  if (r.status === 429) throw new Error('Много попыток — подожди минуту');
+  if (!r.ok) throw new Error('Неверный логин или пароль');
+  const d = await r.json();
+  remote.token = d.token; remote.login = login;
+  localStorage.setItem('sportlog.token', d.token);
+  localStorage.setItem('sportlog.login', login);
+  await syncInit();
+  render();
+}
+
+async function doLogout() {
+  try { await api('/api/logout', { method: 'POST' }); } catch (e) {}
+  dropToken();
+  localStorage.removeItem('sportlog.login');
+  remote.login = null;
+  programOverride = null;
+  render();
+}
 
 /* ---------- даты ---------- */
 const DAY_MS = 86400000;
@@ -64,7 +150,7 @@ function esc(s) {
 
 /* ---------- навигация ---------- */
 function renderNav() {
-  $weekNav.innerHTML = WEEKS.map(w =>
+  $weekNav.innerHTML = PROG().map(w =>
     `<button class="navbtn ${w.n === curWeek ? 'active' : ''} ${w.n === TODAY.week && TODAY.inPlan ? 'today-mark' : ''}" data-week="${w.n}">
       НЕД ${w.n}<small>${esc(w.theme)}</small>
     </button>`).join('');
@@ -112,7 +198,8 @@ function exRow(ex, wn, d, bi, ei) {
 }
 
 function renderDay() {
-  const wk = WEEKS[curWeek - 1];
+  const wk = PROG()[curWeek - 1];
+  if (!wk) return;
   const d = wk.days[REAL_TO_PROG[curView] || curView];
   const isToday = TODAY.inPlan && curWeek === TODAY.week && curView === TODAY.day;
 
@@ -176,8 +263,7 @@ function renderDay() {
 }
 
 /* ---------- модалка с описанием ---------- */
-function openModal(name) {
-  const descr = DESCR[name] || 'Описание пока не добавлено.';
+function showModal(name, descr) {
   $modalRoot.innerHTML = `<div class="modal-back" role="dialog" aria-modal="true" aria-label="${esc(name)}">
     <div class="modal px">
       <button class="x" aria-label="Закрыть">X</button>
@@ -189,6 +275,30 @@ function openModal(name) {
   back.querySelector('.x').addEventListener('click', closeModal);
   back.addEventListener('click', e => { if (e.target === back) closeModal(); });
   back.querySelector('.x').focus();
+}
+
+function descrCache() {
+  try { return JSON.parse(localStorage.getItem('sportlog.descr') || '{}'); }
+  catch (e) { return {}; }
+}
+
+async function openModal(name) {
+  let descr = DESCR[name] || descrCache()[name];
+  if (descr) { showModal(name, descr); return; }
+  if (!remote.token) { showModal(name, 'Описание пока не добавлено. Войди в аккаунт (ИНФО) — найду описание автоматически.'); return; }
+  showModal(name, '…ищу описание…');
+  try {
+    const r = await api('/api/describe', { method: 'POST', body: JSON.stringify({ name }) });
+    if (r.ok) {
+      const d = await r.json();
+      const cache = descrCache();
+      cache[name] = d.description;
+      localStorage.setItem('sportlog.descr', JSON.stringify(cache));
+      if ($modalRoot.firstElementChild) showModal(name, d.description); // модалка ещё открыта
+      return;
+    }
+  } catch (e) { /* нет сети/сервера */ }
+  if ($modalRoot.firstElementChild) showModal(name, 'Описание пока не добавлено.');
 }
 function closeModal() {
   stopTimer();
@@ -378,7 +488,17 @@ document.getElementById('importFile').addEventListener('change', e => {
 
 /* ---------- инфо ---------- */
 function renderInfo() {
-  let html = `<div class="dayhead px"><h2>ПРАВИЛА МЕСЯЦА</h2></div>
+  let html = `<div class="dayhead px"><h2>АККАУНТ</h2></div>
+  <section class="block px" style="padding:12px 14px">
+    ${remote.token
+      ? `<div style="font-size:20px">вход выполнен: <b style="color:var(--accent);font-weight:400">${esc(remote.login || '')}</b> · синхронизация: <b style="color:${remote.online ? 'var(--accent)' : 'var(--warn)'};font-weight:400">${remote.online ? 'онлайн' : 'офлайн — записи локально'}</b></div>
+         <div class="toolbar"><button class="toolbtn" id="btnLogout">ВЫЙТИ</button></div>`
+      : `<div style="font-size:20px;color:var(--text-dim);margin-bottom:8px">вход не выполнен — данные только на этом устройстве</div>
+         <div class="logrow"><input id="loginName" placeholder="логин" autocomplete="username" style="width:130px"><input id="loginPass" type="password" placeholder="пароль" autocomplete="current-password" style="width:130px"><button class="logbtn" id="btnLogin">ВОЙТИ</button></div>
+         <div id="loginErr" style="color:#d87d7d;font-size:18px;margin-top:6px"></div>`}
+  </section>
+
+  <div class="dayhead px"><h2>ПРАВИЛА МЕСЯЦА</h2></div>
   <section class="block px"><ul style="padding:12px 18px 12px 30px">
     ${RULES.map(r => `<li style="padding:4px 0;font-size:20px;list-style:square">${esc(r)}</li>`).join('')}
   </ul></section>
@@ -397,6 +517,20 @@ function renderInfo() {
   </ul></section>`;
 
   $view.innerHTML = html;
+
+  const btnLogin = document.getElementById('btnLogin');
+  if (btnLogin) btnLogin.addEventListener('click', async () => {
+    const l = document.getElementById('loginName').value.trim();
+    const p = document.getElementById('loginPass').value;
+    const err = document.getElementById('loginErr');
+    if (!l || !p) { err.textContent = 'введи логин и пароль'; return; }
+    err.textContent = '…';
+    try { await doLogin(l, p); toast('СИНХРОНИЗАЦИЯ ВКЛЮЧЕНА ■'); }
+    catch (e) { err.textContent = e.message || 'нет связи с сервером'; }
+  });
+  const btnLogout = document.getElementById('btnLogout');
+  if (btnLogout) btnLogout.addEventListener('click', () => { doLogout(); toast('ВЫШЕЛ ИЗ АККАУНТА'); });
+
   $view.querySelectorAll('[data-meas]').forEach(c =>
     c.addEventListener('change', () => {
       store.meas[c.dataset.meas] = c.checked;
@@ -414,4 +548,7 @@ function render() {
   window.scrollTo({ top: 0 });
 }
 
-render();
+(async () => {
+  await syncInit();
+  render();
+})();

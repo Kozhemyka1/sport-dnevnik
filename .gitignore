@@ -1,0 +1,5 @@
+node_modules/
+server/web/
+server/data.db
+server/__pycache__/
+*.pyc
