@@ -196,13 +196,14 @@ function renderNav() {
     </button>`).join('') +
     `<button class="navbtn editbtn ${editMode ? 'active' : ''}" data-edit="1" title="Режим правки программы">✎</button>`;
   $weekNav.querySelectorAll('[data-week]').forEach(b =>
-    b.addEventListener('click', () => { curWeek = +b.dataset.week; if (curView === 'diary' || curView === 'info' || curView === 'import') curView = TODAY.day; render(); }));
+    b.addEventListener('click', () => { curWeek = +b.dataset.week; if (curView === 'diary' || curView === 'info' || curView === 'import' || curView === 'stats') curView = TODAY.day; render(); }));
   $weekNav.querySelector('[data-edit]').addEventListener('click', () => { editMode = !editMode; render(); });
 
   const dayBtns = TAB_ORDER.map(d =>
     `<button class="navbtn ${d === curView ? 'active' : ''} ${d === TODAY.day && TODAY.inPlan ? 'today-mark' : ''}" data-day="${d}">${DAY_NAMES[d]}</button>`).join('');
   $dayNav.innerHTML = dayBtns +
     `<button class="navbtn ${curView === 'diary' ? 'active' : ''}" data-day="diary">ДНЕВ<br>НИК</button>` +
+    `<button class="navbtn ${curView === 'stats' ? 'active' : ''}" data-day="stats">СТАТ</button>` +
     `<button class="navbtn ${curView === 'info' ? 'active' : ''}" data-day="info">ИНФО</button>` +
     `<button class="navbtn ${curView === 'import' ? 'active' : ''}" data-day="import">ИМП<br>ОРТ</button>`;
   $dayNav.querySelectorAll('button').forEach(b =>
@@ -513,8 +514,74 @@ function renderDiary() {
     document.getElementById('importFile').click());
 }
 
-function exportJSON() {
-  const blob = new Blob([JSON.stringify(store, null, 2)], { type: 'application/json' });
+/* ---------- статистика ---------- */
+let statsEx = null;
+
+function exStats() {
+  const byEx = {};
+  store.entries.forEach(e => {
+    const w = parseFloat(String(e.weight || '').replace(',', '.'));
+    if (!isFinite(w)) return;
+    (byEx[e.exName] = byEx[e.exName] || []).push({ ...e, wNum: w });
+  });
+  Object.values(byEx).forEach(l =>
+    l.sort((a, b) => (a.date + (a.ts || '')).localeCompare(b.date + (b.ts || ''))));
+  return byEx;
+}
+
+function renderStats() {
+  const byEx = exStats();
+  const names = Object.keys(byEx).sort((a, b) => byEx[b].length - byEx[a].length);
+
+  if (!names.length) {
+    $view.innerHTML = `<div class="dayhead px"><h2>СТАТИСТИКА</h2></div>
+      <section class="block px"><div class="empty">пока нет записей с весом —<br>записывай веса на странице тренировки</div></section>`;
+    return;
+  }
+
+  if (!statsEx || !byEx[statsEx]) statsEx = names[0];
+  const list = byEx[statsEx];
+  const ws = list.map(e => e.wNum);
+  const min = Math.min(...ws), max = Math.max(...ws);
+  const lastW = ws[ws.length - 1];
+  const delta = Math.round((lastW - ws[0]) * 10) / 10;
+  const shown = list.slice(-12);
+
+  const bars = shown.map((e, i) => {
+    const h = 15 + 85 * (max > min ? (e.wNum - min) / (max - min) : 1);
+    const cls = (e.wNum === max ? ' max' : '') + (i === shown.length - 1 ? ' last' : '');
+    return `<div class="stcol" title="${e.date} — ${e.wNum} кг${e.note ? ' · ' + esc(e.note) : ''}">
+      <span class="stval">${e.wNum}</span>
+      <div class="stbar${cls}" style="height:${h}%"></div>
+      <span class="stdate">${e.date.slice(8)}.${e.date.slice(5, 7)}</span>
+    </div>`;
+  }).join('');
+
+  $view.innerHTML = `<div class="dayhead px"><h2>СТАТИСТИКА</h2>
+    <div class="meta"><span>упражнений с записями: <b>${names.length}</b></span></div></div>
+  <section class="block px" style="padding:10px 12px">
+    <div class="expick">${names.map(n =>
+      `<button class="exbtn ${n === statsEx ? 'active' : ''}" data-ex="${esc(n)}">${esc(n)}</button>`).join('')}</div>
+  </section>
+  <div class="dayhead px"><h2>${esc(statsEx)}</h2>
+    <div class="meta"><span>записей: <b>${list.length}</b></span><span>рекорд: <b>${max} кг</b></span><span>последний: <b>${lastW} кг</b></span><span>Δ <b class="${delta > 0 ? 'up' : delta < 0 ? 'down' : ''}">${delta > 0 ? '+' : ''}${delta} кг</b></span></div></div>
+  <section class="block px" style="padding:14px 10px 10px">
+    <div class="statchart">${bars}</div>
+    ${list.length > 12 ? `<div class="stnote">последние 12 записей из ${list.length}</div>` : ''}
+  </section>
+  <section class="block px" style="padding:8px 14px 12px">
+    ${list.slice(-5).reverse().map(e => `<div class="dentry">
+      <span class="n">${e.date.slice(8)}.${e.date.slice(5, 7)}.${e.date.slice(0, 4)}</span>
+      <span class="w">${e.wNum} кг</span>
+      <span class="c">${esc(e.note || '')}</span>
+    </div>`).join('')}
+  </section>`;
+
+  $view.querySelectorAll('[data-ex]').forEach(b =>
+    b.addEventListener('click', () => { statsEx = b.dataset.ex; render(); }));
+}
+
+function exportJSON() {  const blob = new Blob([JSON.stringify(store, null, 2)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
   a.download = `sport-dnevnik-${iso(new Date())}.json`;
@@ -674,6 +741,7 @@ function render() {
   document.querySelector('.top').style.display = '';
   renderNav();
   if (curView === 'diary') renderDiary();
+  else if (curView === 'stats') renderStats();
   else if (curView === 'info') renderInfo();
   else if (curView === 'import') renderImport();
   else renderDay();
