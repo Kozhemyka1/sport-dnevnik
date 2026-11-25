@@ -686,7 +686,7 @@ function showProgModal(html) {
 }
 
 async function importProgramFile(f) {
-  showProgModal(`<h3>ИМПОРТ ПРОГРАММЫ</h3><p>…разбираю файл через Groq, это 5–20 секунд…</p>`);
+  showProgModal(`<h3>ИМПОРТ ПРОГРАММЫ</h3><p>…разбираю файл через Groq, это может занять до минуты…</p>`);
   let d = null;
   try {
     const ext = (f.name.split('.').pop() || 'txt').toLowerCase();
@@ -711,9 +711,11 @@ async function importProgramFile(f) {
   }
   const weeks = d.program;
   const list = weeks.map(w => `неделя ${w.n}: ${esc(w.theme)}`).join('<br>');
+  const skipped = d.skipped ? `<p style="color:#d87d7d;font-size:18px">не разобралось кусков: ${d.skipped} — проверь программу и добей руками в режиме ✎</p>` : '';
   const back = showProgModal(`<h3>ИМПОРТ ПРОГРАММЫ</h3>
     <p>распознано недель: <b>${weeks.length}</b></p>
     <p style="color:var(--text-dim);font-size:18px">${list}</p>
+    ${skipped}
     <p style="color:var(--warn);font-size:18px">заменит текущую программу</p>
     <div class="toolbar"><button class="toolbtn" data-ok>ПРИМЕНИТЬ</button><button class="toolbtn" data-x>ОТМЕНА</button></div>`);
   back.querySelector('[data-x]').addEventListener('click', closeModal);

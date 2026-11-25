@@ -2,8 +2,10 @@
 # FastAPI + SQLite: аккаунты, хранилище программы/дневника, прокси к Groq
 import json
 import os
+import re
 import secrets
 import sqlite3
+import asyncio
 import time
 from contextlib import closing
 
@@ -224,6 +226,66 @@ IMPORT_PROMPT = '''Ты — парсер программ тренировок. 
 Текст программы:
 '''
 
+def docx_to_text(raw: bytes) -> str:
+    """Текст из docx строго в порядке документа: абзацы и таблицы чередуются как в файле."""
+    import docx, io
+    from docx.table import Table
+    from docx.text.paragraph import Paragraph
+    doc = docx.Document(io.BytesIO(raw))
+    lines = []
+    for child in doc.element.body.iterchildren():
+        if child.tag.endswith('}p'):
+            t = Paragraph(child, doc).text.strip()
+            if t:
+                lines.append(t)
+        elif child.tag.endswith('}tbl'):
+            for row_ in Table(child, doc).rows:
+                cells = [c.text.strip().replace('\n', ' ') for c in row_.cells]
+                lines.append(' | '.join(cells))
+    return '\n'.join(lines)
+
+def split_weeks(text: str) -> list:
+    """Режет текст на куски по заголовкам 'Неделя N'. Если не нашёл — один кусок целиком."""
+    parts = re.split(r'(?im)^\s*(?:\d+\s*[.\)]\s*)?(неделя\s*\d+\b[^\n]*)$', text)
+    if len(parts) < 3:
+        return [text]
+    out = []
+    for i in range(1, len(parts), 2):
+        chunk = parts[i] + '\n' + parts[i + 1]
+        if chunk.strip():
+            out.append(chunk)
+    return out or [text]
+
+async def groq_parse_weeks(text: str) -> str:
+    """Один запрос к Groq: текст -> JSON-строка. 429 — ждём и повторяем."""
+    delay = 6.0
+    for attempt in range(4):
+        try:
+            async with httpx.AsyncClient(timeout=90) as client:
+                r = await client.post(
+                    'https://api.groq.com/openai/v1/chat/completions',
+                    headers={'Authorization': f'Bearer {GROQ_API_KEY}'},
+                    json={
+                        'model': GROQ_MODEL,
+                        'messages': [{'role': 'user', 'content': IMPORT_PROMPT + text}],
+                        'temperature': 0.1,
+                        'max_tokens': 8000,
+                        'response_format': {'type': 'json_object'},
+                    })
+                r.raise_for_status()
+                return r.json()['choices'][0]['message']['content']
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 429 and attempt < 3:
+                ra = e.response.headers.get('retry-after')
+                try:
+                    wait = float(ra) if ra else delay
+                except ValueError:
+                    wait = delay
+                await asyncio.sleep(min(wait, 30.0))
+                delay *= 2
+                continue
+            raise
+
 def normalize_program(data):
     """Приводит ответ модели к нашей схеме; возвращает None, если совсем мимо."""
     try:
@@ -287,39 +349,37 @@ async def import_program_ep(req: Request):
         return JSONResponse({'error': 'bad_file'}, status_code=400)
     if fname.endswith('.docx'):
         try:
-            import docx, io
-            doc = docx.Document(io.BytesIO(raw))
-            text = '\n'.join(p.text for p in doc.paragraphs if p.text.strip())
-            for tbl in doc.tables:
-                for row_ in tbl.rows:
-                    text += '\n' + ' | '.join(c.text.strip() for c in row_.cells)
+            text = docx_to_text(raw)
         except Exception:
             return JSONResponse({'error': 'bad_file'}, status_code=400)
     else:
         text = raw.decode('utf-8', errors='replace')
-    text = text[:15000]
+    text = text[:20000]
     if len(text.strip()) < 30:
         return JSONResponse({'error': 'empty'}, status_code=400)
-    try:
-        async with httpx.AsyncClient(timeout=60) as client:
-            r = await client.post(
-                'https://api.groq.com/openai/v1/chat/completions',
-                headers={'Authorization': f'Bearer {GROQ_API_KEY}'},
-                json={
-                    'model': GROQ_MODEL,
-                    'messages': [{'role': 'user', 'content': IMPORT_PROMPT + text}],
-                    'temperature': 0.1,
-                    'max_tokens': 8000,
-                    'response_format': {'type': 'json_object'},
-                })
-            r.raise_for_status()
-            content = r.json()['choices'][0]['message']['content']
-        program = normalize_program(json.loads(content))
-    except Exception:
-        return JSONResponse({'error': 'parse_failed'}, status_code=502)
+    # длинный файл парсим по неделям: так модель ничего не теряет
+    chunks = split_weeks(text)
+    program = []
+    failed = 0
+    for chunk in chunks[:8]:  # максимум 8 недель
+        part = None
+        for _ in range(2):  # пустой/битый ответ — один повтор
+            try:
+                content = await groq_parse_weeks(chunk)
+                part = normalize_program(json.loads(content))
+            except Exception:
+                part = None
+            if part:
+                break
+        if part:
+            program.extend(part)
+        else:
+            failed += 1  # неделя не разобралась — пропускаем, остальные спасаем
     if not program:
         return JSONResponse({'error': 'parse_failed'}, status_code=502)
-    return {'program': program}
+    for i, w in enumerate(program):
+        w['n'] = i + 1  # сквозная нумерация после склейки
+    return {'program': program, 'skipped': failed}
 
 # ---------- статика (само приложение) ----------
 
