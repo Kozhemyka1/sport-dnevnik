@@ -16,11 +16,11 @@ cd /opt/sport
 git clone https://github.com/Kozhemyka1/sport-dnevnik.git repo
 
 # серверная часть:
-cp -r repo/app/server /opt/sport/server
+cp -r repo/server /opt/sport/server
 
 # фронт (его раздаёт сервер из папки web/):
 mkdir -p /opt/sport/server/web
-cp -r repo/app/index.html repo/app/src repo/app/*.png repo/app/manifest.json /opt/sport/server/web/
+cp -r repo/index.html repo/src repo/*.png repo/manifest.json /opt/sport/server/web/
 ```
 
 ## 3. Python-окружение и зависимости
@@ -74,7 +74,7 @@ cd /opt/sport/server
 
 ```bash
 cd /opt/sport/repo && git pull
-cp -r app/index.html app/src app/*.png app/manifest.json /opt/sport/server/web/
+cp -r index.html src *.png manifest.json /opt/sport/server/web/
 systemctl restart sport
 ```
 
