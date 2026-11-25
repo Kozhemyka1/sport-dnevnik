@@ -14,7 +14,7 @@
 <meta name="apple-mobile-web-app-title" content="СПОРТ">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
 <style>
 :root{
   --bg: #000000;
@@ -27,9 +27,45 @@
   --accent: #7dd87d;
   --accent-dim: #2a4a2a;
   --warn: #d8b87d;
+  --danger: #d87d7d;
+  --shadow: #141414;
   --px-head: 'Press Start 2P', monospace;
   --px-body: 'VT323', monospace;
 }
+/* темы оформления */
+body[data-theme="amber"]{
+  --panel:#0b0803; --line:#3a2a12; --line-dim:#241a0c;
+  --text:#c9a25c; --text-dim:#7a6033; --text-bright:#f2dda6;
+  --accent:#ffb000; --accent-dim:#5a3f00; --warn:#ffe1a1; --danger:#e08080;
+}
+body[data-theme="blue"]{
+  --panel:#04070c; --line:#16304e; --line-dim:#0d1c2e;
+  --text:#7fa3cf; --text-dim:#48678f; --text-bright:#d2e4f9;
+  --accent:#4da3ff; --accent-dim:#1a3a5c; --warn:#9fd6ff; --danger:#e08080;
+}
+body[data-theme="pink"]{
+  --panel:#0c0409; --line:#3d1a2e; --line-dim:#260f1d;
+  --text:#d98cb8; --text-dim:#8a5572; --text-bright:#f9d2e6;
+  --accent:#ff5cb8; --accent-dim:#5c1a3e; --warn:#ffc2e0; --danger:#ff7d9c;
+}
+body[data-theme="light"]{
+  --bg:#f2f2ec; --panel:#ffffff; --line:#c9c9c0; --line-dim:#e3e3da;
+  --text:#4a4a44; --text-dim:#8a8a80; --text-bright:#181814;
+  --accent:#1d7a2f; --accent-dim:#bfe3c6; --warn:#9a6b1d; --danger:#b03030; --shadow:#d5d5c9;
+}
+/* альтернативный шрифт: моноширинный вместо пиксельного */
+body[data-font="mono"]{
+  --px-head:'JetBrains Mono', monospace;
+  --px-body:'JetBrains Mono', monospace;
+}
+body[data-font="mono"]{font-size:16px}
+body[data-font="mono"] h1{font-size:17px;letter-spacing:0}
+body[data-font="mono"] h2{font-size:14px}
+body[data-font="mono"] h3{font-size:12px}
+body[data-font="mono"] .navbtn{font-size:10px}
+body[data-font="mono"] .navbtn small{font-size:11px}
+body[data-font="mono"] .ex-name{font-size:18px}
+body[data-font="mono"] .gate-logo{font-size:26px}
 *{box-sizing:border-box;margin:0;padding:0}
 html{background:var(--bg)}
 body{
@@ -49,7 +85,7 @@ body::after{
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 button{cursor:pointer;font-family:inherit}
 
-.px{border:2px solid var(--line);background:var(--panel);box-shadow:4px 4px 0 #141414}
+.px{border:2px solid var(--line);background:var(--panel);box-shadow:4px 4px 0 var(--shadow)}
 .wrap{max-width:860px;margin:0 auto;padding:16px 14px 80px}
 
 h1,h2,h3{font-family:var(--px-head);color:var(--text-bright);font-weight:400}
@@ -72,11 +108,11 @@ nav.days{display:grid;grid-template-columns:repeat(10,1fr);gap:8px;margin-bottom
 .navbtn{
   font-family:var(--px-head);font-size:9px;padding:11px 4px;min-width:0;overflow:hidden;
   color:var(--text-dim);background:var(--panel);border:2px solid var(--line);
-  box-shadow:3px 3px 0 #141414;text-transform:uppercase;
+  box-shadow:3px 3px 0 var(--shadow);text-transform:uppercase;
 }
 .navbtn small{display:block;font-family:var(--px-body);font-size:16px;text-transform:none;margin-top:5px;color:inherit;opacity:.75;overflow-wrap:anywhere;word-break:break-word}
 .navbtn:hover{color:var(--text-bright);border-color:var(--text-dim)}
-.navbtn:active{transform:translate(2px,2px);box-shadow:1px 1px 0 #141414}
+.navbtn:active{transform:translate(2px,2px);box-shadow:1px 1px 0 var(--shadow)}
 .navbtn.active{color:var(--accent);border-color:var(--accent);text-shadow:0 0 6px rgba(125,216,125,.4)}
 .navbtn.today-mark{position:relative}
 .navbtn.today-mark::after{content:"▸";position:absolute;top:1px;right:3px;color:var(--accent);font-size:10px}
@@ -177,7 +213,7 @@ details.px li::marker{content:"■ ";color:var(--line);font-size:12px}
   font-family:var(--px-head);font-size:8px;color:var(--text-dim);
   background:none;border:1px solid var(--line);padding:4px 6px;
 }
-.dentry .del:hover{color:#d87d7d;border-color:#d87d7d}
+.dentry .del:hover{color:var(--danger);border-color:var(--danger)}
 .empty{padding:26px 14px;text-align:center;color:var(--text-dim);font-size:20px}
 
 .toolbar{display:flex;gap:8px;margin:18px 0 0;flex-wrap:wrap}
@@ -187,7 +223,7 @@ details.px li::marker{content:"■ ";color:var(--line);font-size:12px}
 }
 .toolbtn:hover{color:var(--text-bright);border-color:var(--text-dim)}
 .toolbtn:active{transform:translate(1px,1px)}
-.toolbtn.danger{color:#d87d7d;border-color:#5a2e2e}
+.toolbtn.danger{color:var(--danger);border-color:#5a2e2e}
 .editbtn{font-size:12px;min-width:44px}
 .editblock{padding-bottom:14px}
 .elabel{display:block;font-size:16px;color:var(--text-dim);margin:10px 0 2px;padding:0 14px}
@@ -204,7 +240,7 @@ details.px li::marker{content:"■ ";color:var(--line);font-size:12px}
   background:none;border:2px solid var(--line);color:var(--text-dim);
   font-family:var(--px-head);font-size:9px;padding:6px 8px;cursor:pointer;flex:none
 }
-.editrow .del:hover{color:#d87d7d;border-color:#d87d7d}
+.editrow .del:hover{color:var(--danger);border-color:var(--danger)}
 .echeck{display:flex;align-items:center;gap:6px;font-size:18px;color:var(--text-dim);padding:8px 14px;flex:none}
 .echeck input{width:16px;height:16px;accent-color:var(--warn)}
 .gate{margin-top:18vh;text-align:center;padding:24px 14px}
@@ -242,7 +278,14 @@ footer{margin-top:34px;text-align:center;color:var(--line);font-size:17px}
 .stdate{font-family:var(--px-head);font-size:7px;color:var(--text-dim);margin-top:4px}
 .stnote{font-size:14px;color:var(--text-dim);text-align:center;padding-top:6px}
 .up{color:var(--accent)}
-.down{color:#d87d7d}
+.down{color:var(--danger)}
+
+/* переключатель тем */
+.themepick{display:flex;gap:10px;flex-wrap:wrap}
+.themesw{width:44px;height:44px;border:2px solid var(--line);box-shadow:3px 3px 0 var(--shadow)}
+.themesw.active{border-color:var(--text-bright)}
+.themesw:active{transform:translate(2px,2px);box-shadow:1px 1px 0 var(--shadow)}
+.fontpick{display:flex;gap:8px;margin-top:12px}
 
 @media (max-width:640px){
   body{font-size:19px}

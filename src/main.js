@@ -23,6 +23,25 @@ function saveStore() {
 }
 let store = loadStore();
 
+/* ---------- тема оформления ---------- */
+const THEMES = {
+  term:  { name: 'ТЕРМИНАЛ', sw: '#7dd87d', bg: '#000000' },
+  amber: { name: 'ЯНТАРЬ',   sw: '#ffb000', bg: '#000000' },
+  blue:  { name: 'СИНЯЯ',    sw: '#4da3ff', bg: '#000000' },
+  pink:  { name: 'РОЗОВАЯ',  sw: '#ff5cb8', bg: '#000000' },
+  light: { name: 'СВЕТЛАЯ',  sw: '#1d7a2f', bg: '#f2f2ec' },
+};
+let curTheme = localStorage.getItem('sportlog.theme') || 'term';
+let curFont = localStorage.getItem('sportlog.font') || 'px';
+if (!THEMES[curTheme]) curTheme = 'term';
+function applyTheme() {
+  document.body.dataset.theme = curTheme;
+  document.body.dataset.font = curFont;
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.content = THEMES[curTheme].bg;
+}
+applyTheme();
+
 /* ---------- синхронизация с сервером ---------- */
 const remote = {
   token: localStorage.getItem('sportlog.token') || null,
@@ -661,7 +680,7 @@ async function importProgramFile(f) {
   }
   const weeks = d.program;
   const list = weeks.map(w => `неделя ${w.n}: ${esc(w.theme)}`).join('<br>');
-  const skipped = d.skipped ? `<p style="color:#d87d7d;font-size:18px">не разобралось кусков: ${d.skipped} — проверь программу и добей руками в режиме ✎</p>` : '';
+  const skipped = d.skipped ? `<p style="color:var(--danger);font-size:18px">не разобралось кусков: ${d.skipped} — проверь программу и добей руками в режиме ✎</p>` : '';
   const back = showProgModal(`<h3>ИМПОРТ ПРОГРАММЫ</h3>
     <p>распознано недель: <b>${weeks.length}</b></p>
     <p style="color:var(--text-dim);font-size:18px">${list}</p>
@@ -691,7 +710,19 @@ function renderInfo() {
          <div class="toolbar"><button class="toolbtn" id="btnLogout">ВЫЙТИ</button></div>`
       : `<div style="font-size:20px;color:var(--text-dim);margin-bottom:8px">вход не выполнен — данные только на этом устройстве</div>
          <div class="logrow"><input id="loginName" placeholder="логин" autocomplete="username" style="width:130px"><input id="loginPass" type="password" placeholder="пароль" autocomplete="current-password" style="width:130px"><button class="logbtn" id="btnLogin">ВОЙТИ</button></div>
-         <div id="loginErr" style="color:#d87d7d;font-size:18px;margin-top:6px"></div>`}
+         <div id="loginErr" style="color:var(--danger);font-size:18px;margin-top:6px"></div>`}
+  </section>
+
+  <div class="dayhead px"><h2>ОФОРМЛЕНИЕ</h2></div>
+  <section class="block px" style="padding:12px 14px">
+    <div class="themepick">
+      ${Object.entries(THEMES).map(([k, t]) =>
+        `<button class="themesw ${k === curTheme ? 'active' : ''}" data-theme-pick="${k}" style="background:${t.sw}" title="${t.name}" aria-label="Тема: ${t.name}"></button>`).join('')}
+    </div>
+    <div class="fontpick">
+      <button class="exbtn ${curFont === 'px' ? 'active' : ''}" data-font-pick="px">ПИКСЕЛЬ</button>
+      <button class="exbtn ${curFont === 'mono' ? 'active' : ''}" data-font-pick="mono" style="font-family:'JetBrains Mono',monospace">МОНО</button>
+    </div>
   </section>
 
   <div class="dayhead px"><h2>ПРАВИЛА МЕСЯЦА</h2></div>
@@ -727,6 +758,19 @@ function renderInfo() {
   const btnLogout = document.getElementById('btnLogout');
   if (btnLogout) btnLogout.addEventListener('click', () => { doLogout(); toast('ВЫШЕЛ ИЗ АККАУНТА'); });
 
+  $view.querySelectorAll('[data-theme-pick]').forEach(b =>
+    b.addEventListener('click', () => {
+      curTheme = b.dataset.themePick;
+      localStorage.setItem('sportlog.theme', curTheme);
+      applyTheme(); render();
+    }));
+  $view.querySelectorAll('[data-font-pick]').forEach(b =>
+    b.addEventListener('click', () => {
+      curFont = b.dataset.fontPick;
+      localStorage.setItem('sportlog.font', curFont);
+      applyTheme(); render();
+    }));
+
   $view.querySelectorAll('[data-meas]').forEach(c =>
     c.addEventListener('change', () => {
       store.meas[c.dataset.meas] = c.checked;
@@ -761,7 +805,7 @@ function renderGate() {
       <input id="loginPass" type="password" placeholder="пароль" autocomplete="current-password" style="width:130px">
       <button class="logbtn" id="btnLogin">ВОЙТИ</button>
     </div>
-    <div id="loginErr" style="color:#d87d7d;font-size:18px;margin-top:6px"></div>
+    <div id="loginErr" style="color:var(--danger);font-size:18px;margin-top:6px"></div>
   </section>`;
   window.scrollTo({ top: 0 });
 
