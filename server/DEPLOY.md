@@ -52,14 +52,14 @@ systemctl status sport      # должно быть active (running)
 apt install -y caddy
 ```
 
-В файле `/opt/sport/server/Caddyfile` замени `sport.example.com` на свой сабдомен DuckDNS, затем:
+Caddyfile уже настроен на `pixelsport.duckdns.org`. Просто:
 
 ```bash
 cp /opt/sport/server/Caddyfile /etc/caddy/Caddyfile
 systemctl reload caddy
 ```
 
-Caddy сам получит сертификат Let's Encrypt. Проверка: открыть `https://твой-сабдомен` — должно открыться приложение.
+Caddy сам получит сертификат Let's Encrypt. Проверка: открыть `https://pixelsport.duckdns.org` — должно открыться приложение.
 
 ## 7. Создать аккаунты
 

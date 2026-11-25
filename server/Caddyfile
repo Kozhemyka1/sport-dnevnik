@@ -1,4 +1,3 @@
-# Замени sport.example.com на свой сабдомен DuckDNS
-sport.example.com {
+pixelsport.duckdns.org {
     reverse_proxy 127.0.0.1:8080
 }
