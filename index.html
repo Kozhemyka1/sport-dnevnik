@@ -287,6 +287,15 @@ footer{margin-top:34px;text-align:center;color:var(--line);font-size:17px}
 .themesw:active{transform:translate(2px,2px);box-shadow:1px 1px 0 var(--shadow)}
 .fontpick{display:flex;gap:8px;margin-top:12px}
 
+/* выполнение дня / курсор */
+.donebar{display:flex;gap:10px;align-items:center;padding:10px 14px;flex-wrap:wrap}
+.donestatus{font-family:var(--px-head);font-size:9px;color:var(--text-dim)}
+.donestatus.done{color:var(--accent)}
+.donestatus.skipped{color:var(--danger)}
+.donestatus.wait{color:var(--warn)}
+.cursor-badge{color:var(--warn);border-color:var(--warn)}
+.navbtn .stmark{color:var(--accent)}
+
 @media (max-width:640px){
   body{font-size:19px}
   nav.days{grid-template-columns:repeat(5,1fr)}

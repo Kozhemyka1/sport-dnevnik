@@ -11,10 +11,15 @@ function loadStore() {
     const raw = localStorage.getItem(LS_KEY);
     if (raw) {
       const d = JSON.parse(raw);
-      return { entries: Array.isArray(d.entries) ? d.entries : [], meas: d.meas || {} };
+      return {
+        entries: Array.isArray(d.entries) ? d.entries : [],
+        meas: d.meas || {},
+        done: d.done || {},          // отметки выполнения: "неделя:день" -> {status, date}
+        startDate: d.startDate || null, // якорь старта цикла (ISO)
+      };
     }
   } catch (e) { /* повреждённые данные — начинаем с чистого */ }
-  return { entries: [], meas: {} };
+  return { entries: [], meas: {}, done: {}, startDate: null };
 }
 function saveLocal() { localStorage.setItem(LS_KEY, JSON.stringify(store)); }
 function saveStore() {
@@ -117,9 +122,14 @@ async function syncInit() {
     }
     // если программы нет нигде — остаётся пустая, пользователь соберёт сам
     if (state.diary && Array.isArray(state.diary.entries) && state.diary.entries.length) {
-      store = { entries: state.diary.entries, meas: state.diary.meas || {} }; // сервер новее локального — сервер главный
+      store = {  // сервер новее локального — сервер главный
+        entries: state.diary.entries,
+        meas: state.diary.meas || {},
+        done: state.diary.done || {},
+        startDate: state.diary.startDate || null,
+      };
       saveLocal();
-    } else if (store.entries.length) {
+    } else if (store.entries.length || store.startDate || Object.keys(store.done).length) {
       await pushState({ diary: store }); // на сервере пусто — заливаем локальный дневник
     }
   } catch (e) { remote.online = false; }
@@ -151,16 +161,26 @@ const DAY_MS = 86400000;
 function iso(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
+function anchorIso() { return store.startDate || START_DATE; }
+function anchorDate() { return new Date(anchorIso() + 'T00:00:00'); }
+// дата ячейки вкладки i (0..6) выбранной недели curWeek
+function tabDate(i, week = curWeek) {
+  return new Date(anchorDate().getTime() + ((week - 1) * 7 + i) * DAY_MS);
+}
+const WD = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'];
+function tabLabel(i, week) { return WD[tabDate(i, week).getDay()]; }
 function todayInfo() {
-  const start = new Date(START_DATE + 'T00:00:00');
+  const start = anchorDate();
   const now = new Date();
   const diff = Math.floor((new Date(iso(now) + 'T00:00:00') - start) / DAY_MS);
-  if (diff >= 0 && diff < 28) {
+  const total = (PROG() || []).length * 7 || 28;
+  if (diff >= 0 && diff < total) {
     return { week: Math.floor(diff / 7) + 1, day: TAB_ORDER[diff % 7], inPlan: true };
   }
   return { week: 1, day: DAY_ORDER[(now.getDay() + 6) % 7], inPlan: false };
 }
-const TODAY = todayInfo();
+// пересчитывается при каждом обращении (якорь может прийти с сервера после syncInit)
+const TODAY = new Proxy({}, { get: (_, p) => todayInfo()[p] });
 
 /* ---------- состояние ---------- */
 let curWeek = TODAY.week;
@@ -198,13 +218,13 @@ function esc(s) {
 }
 
 /* ---------- шапка с датой ---------- */
-(function renderDate() {
+function renderDate() {
   const now = new Date();
-  const wd = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'][now.getDay()];
+  const P = PROG() || [];
   document.getElementById('dateNow').innerHTML =
-    `<b>${wd}</b> ${iso(now).split('-').reverse().join('.')}` +
-    (TODAY.inPlan ? `<br>неделя <b>${TODAY.week}</b> из 4` : `<br>вне плана`);
-})();
+    `<b>${WD[now.getDay()]}</b> ${iso(now).split('-').reverse().join('.')}` +
+    (TODAY.inPlan ? `<br>неделя <b>${TODAY.week}</b> из ${P.length || 4}` : `<br>вне плана`);
+}
 
 /* ---------- навигация ---------- */
 function renderNav() {
@@ -218,8 +238,14 @@ function renderNav() {
     b.addEventListener('click', () => { curWeek = +b.dataset.week; if (curView === 'diary' || curView === 'info' || curView === 'import' || curView === 'stats') curView = TODAY.day; render(); }));
   $weekNav.querySelector('[data-edit]').addEventListener('click', () => { editMode = !editMode; render(); });
 
-  const dayBtns = TAB_ORDER.map(d =>
-    `<button class="navbtn ${d === curView ? 'active' : ''} ${d === TODAY.day && TODAY.inPlan ? 'today-mark' : ''}" data-day="${d}">${DAY_NAMES[d]}</button>`).join('');
+  const todayIso = iso(new Date());
+  const dayBtns = TAB_ORDER.map((d, i) => {
+    const mark = iso(tabDate(i)) === todayIso ? 'today-mark' : '';
+    const pk = REAL_TO_PROG[d];
+    const st = pk && pk !== 'rest' ? store.done[curWeek + ':' + pk] : null;
+    const badge = st ? `<small class="stmark">${st.status === 'done' ? '✓' : '✗'}</small>` : '';
+    return `<button class="navbtn ${d === curView ? 'active' : ''} ${mark}" data-day="${d}">${tabLabel(i)}${badge}</button>`;
+  }).join('');
   $dayNav.innerHTML = dayBtns +
     `<button class="navbtn ${curView === 'diary' ? 'active' : ''}" data-day="diary">ДНЕВ<br>НИК</button>` +
     `<button class="navbtn ${curView === 'stats' ? 'active' : ''}" data-day="stats">СТАТ</button>` +
@@ -233,6 +259,28 @@ function renderNav() {
 function lastLog(name) {
   for (let i = store.entries.length - 1; i >= 0; i--) {
     if (store.entries[i].exName === name) return store.entries[i];
+  }
+  return null;
+}
+
+/* ---------- курсор выполнения ---------- */
+const PROG_TO_TAB = { d1: 'tue', d2: 'thu', d3: 'sat', d4: 'sun' };
+function dayStatus(week, progKey) { return store.done[week + ':' + progKey] || null; }
+function setDayStatus(week, progKey, status) {
+  const k = week + ':' + progKey;
+  if (status) store.done[k] = { status, date: iso(new Date()) };
+  else delete store.done[k];
+  saveStore(); render();
+}
+// первый невыполненный тренировочный день программы — «текущий» по факту
+function cursorInfo() {
+  const P = PROG() || [];
+  for (const w of P) {
+    for (const pk of ['d1', 'd2', 'd3', 'd4']) {
+      const dd = w.days[pk];
+      if (!dd || dd.rest) continue;
+      if (!dayStatus(w.n, pk)) return { week: w.n, progKey: pk, title: dd.title };
+    }
   }
   return null;
 }
@@ -282,10 +330,17 @@ function renderDay() {
     return;
   }
 
-  const d = wk.days[REAL_TO_PROG[curView] || curView] || wk.days.rest;
-  const isToday = TODAY.inPlan && curWeek === TODAY.week && curView === TODAY.day;
+  const progKey = REAL_TO_PROG[curView] || curView;
+  const d = wk.days[progKey] || wk.days.rest;
+  const tabIdx = TAB_ORDER.indexOf(curView);
+  const tabDt = tabDate(tabIdx);
+  const isToday = iso(tabDt) === iso(new Date());
 
   if (editMode) { renderDayEdit(P, wk, d); return; }
+
+  const cursor = cursorInfo();
+  const isCursor = !!(cursor && cursor.week === curWeek && cursor.progKey === progKey && !d.rest);
+  const dateLbl = `${tabLabel(tabIdx)} ${String(tabDt.getDate()).padStart(2, '0')}.${String(tabDt.getMonth() + 1).padStart(2, '0')}`;
 
   let html = `<div class="weekinfo px">
     <span class="theme">Неделя ${wk.n} — ${esc(wk.theme)}</span>
@@ -293,9 +348,34 @@ function renderDay() {
     <span class="hint">${esc(wk.hint)}</span>
   </div>
   <div class="dayhead px">
-    <h2>${esc(d.title)}${isToday ? '<span class="today-badge">СЕГОДНЯ</span>' : ''}</h2>
-    <div class="meta"><span><b>${DAY_NAMES[curView]}</b> · день ${TAB_ORDER.indexOf(curView) + 1} программы</span><span>фокус: <b>${esc(d.focus)}</b></span><span>время: <b>${esc(d.dur)}</b></span></div>
+    <h2>${esc(d.title)}${isToday ? '<span class="today-badge">СЕГОДНЯ</span>' : ''}${isCursor && !isToday ? '<span class="today-badge cursor-badge">ТЕКУЩИЙ</span>' : ''}</h2>
+    <div class="meta"><span><b>${dateLbl}</b> · день ${tabIdx + 1} программы</span><span>фокус: <b>${esc(d.focus)}</b></span><span>время: <b>${esc(d.dur)}</b></span></div>
   </div>`;
+
+  // панель выполнения на тренировочном дне
+  if (!d.rest && progKey !== 'rest') {
+    const st = dayStatus(curWeek, progKey);
+    if (!st) {
+      html += `<div class="donebar px">
+        <button class="toolbtn" data-done="done">■ ВЫПОЛНЕНО</button>
+        <button class="toolbtn" data-done="skipped">✗ ПРОПУСТИТЬ</button>
+      </div>`;
+    } else {
+      const lbl = st.status === 'done'
+        ? `■ ВЫПОЛНЕНО ${st.date.slice(8)}.${st.date.slice(5, 7)}`
+        : '✗ ПРОПУЩЕН';
+      html += `<div class="donebar px"><span class="donestatus ${st.status}">${lbl}</span>
+        <button class="toolbtn" data-done="">ОТМЕНИТЬ</button></div>`;
+    }
+  }
+  // подсказка, если текущий по факту день — не этот
+  if (isToday && cursor && !isCursor) {
+    html += `<div class="donebar px"><span class="donestatus wait">ждёт выполнения: неделя ${cursor.week} · ${esc(cursor.title)}</span>
+      <button class="toolbtn" data-goto-cursor>→ К НЕМУ</button></div>`;
+  }
+  if (isToday && !cursor && P.length) {
+    html += `<div class="donebar px"><span class="donestatus done">ЦИКЛ ЗАВЕРШЁН ■ все тренировки выполнены</span></div>`;
+  }
 
   if (d.rest && !d.blocks.length) {
     html += `<section class="block px"><div class="restbox"><div class="big">ОТДЫХ<br><br>сон · еда · прогулка<br>мягкая растяжка по желанию</div></div></section>`;
@@ -325,6 +405,16 @@ function renderDay() {
   // обработчики: описания
   $view.querySelectorAll('[data-q]').forEach(b =>
     b.addEventListener('click', () => openModal(b.dataset.q)));
+
+  // обработчики: выполнение дня
+  $view.querySelectorAll('[data-done]').forEach(b =>
+    b.addEventListener('click', () => setDayStatus(curWeek, progKey, b.dataset.done || null)));
+  const gotoCur = $view.querySelector('[data-goto-cursor]');
+  if (gotoCur) gotoCur.addEventListener('click', () => {
+    const c = cursorInfo();
+    if (!c) return;
+    curWeek = c.week; curView = PROG_TO_TAB[c.progKey]; render();
+  });
 
   // обработчики: запись веса
   $view.querySelectorAll('[data-log]').forEach(btn =>
@@ -617,7 +707,7 @@ document.getElementById('importFile').addEventListener('change', e => {
     try {
       const data = JSON.parse(r.result);
       if (!Array.isArray(data.entries)) throw new Error('bad');
-      store = { entries: data.entries, meas: data.meas || {} };
+      store = { entries: data.entries, meas: data.meas || {}, done: data.done || {}, startDate: data.startDate || null };
       saveStore(); toast('ИМПОРТИРОВАНО ▲'); render();
     } catch (err) { toast('ОШИБКА ФАЙЛА'); }
   };
@@ -685,11 +775,12 @@ async function importProgramFile(f) {
     <p>распознано недель: <b>${weeks.length}</b></p>
     <p style="color:var(--text-dim);font-size:18px">${list}</p>
     ${skipped}
-    <p style="color:var(--warn);font-size:18px">заменит текущую программу</p>
+    <p style="color:var(--warn);font-size:18px">заменит текущую программу · старт цикла — сегодня, отметки выполнения сбросятся</p>
     <div class="toolbar"><button class="toolbtn" data-ok>ПРИМЕНИТЬ</button><button class="toolbtn" data-x>ОТМЕНА</button></div>`);
   back.querySelector('[data-x]').addEventListener('click', closeModal);
   back.querySelector('[data-ok]').addEventListener('click', () => {
     programOverride = weeks;
+    store.done = {}; store.startDate = iso(new Date()); saveStore();
     curWeek = 1; curView = TODAY.day; saveProgram(); closeModal(); render();
     toast('ПРОГРАММА ИМПОРТИРОВАНА ▲');
   });
@@ -711,6 +802,13 @@ function renderInfo() {
       : `<div style="font-size:20px;color:var(--text-dim);margin-bottom:8px">вход не выполнен — данные только на этом устройстве</div>
          <div class="logrow"><input id="loginName" placeholder="логин" autocomplete="username" style="width:130px"><input id="loginPass" type="password" placeholder="пароль" autocomplete="current-password" style="width:130px"><button class="logbtn" id="btnLogin">ВОЙТИ</button></div>
          <div id="loginErr" style="color:var(--danger);font-size:18px;margin-top:6px"></div>`}
+  </section>
+
+  <div class="dayhead px"><h2>СТАРТ ЦИКЛА</h2></div>
+  <section class="block px" style="padding:12px 14px">
+    <div style="font-size:20px">день 1 программы: <b style="color:var(--accent);font-weight:400">${anchorIso().split('-').reverse().join('.')}</b>${store.startDate ? '' : ' <span style="color:var(--text-dim);font-size:16px">(по умолчанию)</span>'}</div>
+    <div style="font-size:18px;color:var(--text-dim);margin:6px 0">сдвинь, если начинаешь не во вторник — вся сетка переедет. отметки выполнения сбросятся</div>
+    <div class="toolbar"><button class="toolbtn" id="btnStartToday">▶ НАЧАТЬ С СЕГОДНЯ</button>${store.startDate ? '<button class="toolbtn danger" id="btnStartReset">СБРОС</button>' : ''}</div>
   </section>
 
   <div class="dayhead px"><h2>ОФОРМЛЕНИЕ</h2></div>
@@ -758,6 +856,18 @@ function renderInfo() {
   const btnLogout = document.getElementById('btnLogout');
   if (btnLogout) btnLogout.addEventListener('click', () => { doLogout(); toast('ВЫШЕЛ ИЗ АККАУНТА'); });
 
+  const btnStartToday = document.getElementById('btnStartToday');
+  if (btnStartToday) btnStartToday.addEventListener('click', () => {
+    store.startDate = iso(new Date());
+    store.done = {}; // новый старт — чистый прогресс
+    saveStore(); render();
+    toast('ДЕНЬ 1 — СЕГОДНЯ ▶');
+  });
+  const btnStartReset = document.getElementById('btnStartReset');
+  if (btnStartReset) btnStartReset.addEventListener('click', () => {
+    store.startDate = null; saveStore(); render();
+  });
+
   $view.querySelectorAll('[data-theme-pick]').forEach(b =>
     b.addEventListener('click', () => {
       curTheme = b.dataset.themePick;
@@ -783,6 +893,7 @@ function renderInfo() {
 function render() {
   if (!remote.token) { renderGate(); return; } // без входа — только экран логина
   document.querySelector('.top').style.display = '';
+  renderDate();
   renderNav();
   if (curView === 'diary') renderDiary();
   else if (curView === 'stats') renderStats();
