@@ -394,9 +394,10 @@ function renderDayEdit(P, wk, d) {
     P.push(newWeek(P.length + 1)); saveProgram(); curWeek = P.length; render();
   });
   document.getElementById('btnDelWeek').addEventListener('click', () => {
-    if (P.length <= 1) { toast('НЕЛЬЗЯ УДАЛИТЬ ПОСЛЕДНЮЮ НЕДЕЛЮ'); return; }
     P.splice(curWeek - 1, 1); renumberWeeks(P);
-    curWeek = Math.min(curWeek, P.length); saveProgram(); render();
+    curWeek = Math.max(1, Math.min(curWeek, P.length));
+    if (!P.length) programOverride = P; // пустая программа — чистый лист
+    saveProgram(); render();
   });
   document.getElementById('btnAddBlock').addEventListener('click', () => {
     d.blocks = d.blocks || []; d.blocks.push(newBlock()); saveProgram(); render();
