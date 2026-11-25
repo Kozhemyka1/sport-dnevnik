@@ -330,31 +330,56 @@ function renderDay() {
     return;
   }
 
-  const progKey = REAL_TO_PROG[curView] || curView;
-  const d = wk.days[progKey] || wk.days.rest;
+  const progKeyOwn = REAL_TO_PROG[curView] || curView;
   const tabIdx = TAB_ORDER.indexOf(curView);
   const tabDt = tabDate(tabIdx);
-  const isToday = iso(tabDt) === iso(new Date());
+  const todayIso = iso(new Date());
+  const isToday = iso(tabDt) === todayIso;
 
-  if (editMode) { renderDayEdit(P, wk, d); return; }
+  if (editMode) { renderDayEdit(P, wk, wk.days[progKeyOwn] || wk.days.rest); return; }
 
+  // курсор: первый невыполненный день; просроченный — всплывает на сегодня
   const cursor = cursorInfo();
-  const isCursor = !!(cursor && cursor.week === curWeek && cursor.progKey === progKey && !d.rest);
+  let cursorDateIso = null;
+  if (cursor) cursorDateIso = iso(tabDate(TAB_ORDER.indexOf(PROG_TO_TAB[cursor.progKey]), cursor.week));
+  const trainedToday = Object.values(store.done).some(s => s.date === todayIso);
+  // одна тренировка в день: если сегодня уже выполнено/пропущено — не всплываем
+  const floatActive = !!(cursor && cursorDateIso < todayIso && !trainedToday && TODAY.inPlan);
+  const floatHere = floatActive && isToday;
+
+  let effWeek = curWeek, wkEff = wk, progKey = progKeyOwn;
+  let d = wk.days[progKeyOwn] || wk.days.rest;
+  let movedNote = '';
+  if (floatHere) {
+    effWeek = cursor.week; wkEff = P[cursor.week - 1]; progKey = cursor.progKey;
+    d = wkEff.days[progKey] || wkEff.days.rest;
+    movedNote = `перенесено с ${cursorDateIso.slice(8)}.${cursorDateIso.slice(5, 7)} · день ${cursor.progKey.slice(1)} недели ${cursor.week}`;
+  }
+
+  const isCursor = !!(cursor && cursor.week === effWeek && cursor.progKey === progKey && !d.rest);
+  const isOldCursorCell = isCursor && floatActive && !isToday;
+  const badge = isToday ? '<span class="today-badge">СЕГОДНЯ</span>'
+    : isOldCursorCell ? '<span class="today-badge cursor-badge">→ ПЕРЕНЕСЁН</span>'
+    : isCursor ? '<span class="today-badge cursor-badge">ТЕКУЩИЙ</span>' : '';
   const dateLbl = `${tabLabel(tabIdx)} ${String(tabDt.getDate()).padStart(2, '0')}.${String(tabDt.getMonth() + 1).padStart(2, '0')}`;
 
   let html = `<div class="weekinfo px">
-    <span class="theme">Неделя ${wk.n} — ${esc(wk.theme)}</span>
-    <span class="rpe">${esc(wk.rpe)}</span>
-    <span class="hint">${esc(wk.hint)}</span>
+    <span class="theme">Неделя ${wkEff.n} — ${esc(wkEff.theme)}</span>
+    <span class="rpe">${esc(wkEff.rpe)}</span>
+    <span class="hint">${esc(wkEff.hint)}</span>
   </div>
   <div class="dayhead px">
-    <h2>${esc(d.title)}${isToday ? '<span class="today-badge">СЕГОДНЯ</span>' : ''}${isCursor && !isToday ? '<span class="today-badge cursor-badge">ТЕКУЩИЙ</span>' : ''}</h2>
+    <h2>${esc(d.title)}${badge}</h2>
     <div class="meta"><span><b>${dateLbl}</b> · день ${tabIdx + 1} программы</span><span>фокус: <b>${esc(d.focus)}</b></span><span>время: <b>${esc(d.dur)}</b></span></div>
   </div>`;
 
+  if (movedNote) {
+    html += `<div class="donebar px"><span class="donestatus wait">${esc(movedNote)}</span></div>`;
+  }
+
   // панель выполнения на тренировочном дне
   if (!d.rest && progKey !== 'rest') {
-    const st = dayStatus(curWeek, progKey);
+    const st = dayStatus(effWeek, progKey);
     if (!st) {
       html += `<div class="donebar px">
         <button class="toolbtn" data-done="done">■ ВЫПОЛНЕНО</button>
@@ -367,11 +392,6 @@ function renderDay() {
       html += `<div class="donebar px"><span class="donestatus ${st.status}">${lbl}</span>
         <button class="toolbtn" data-done="">ОТМЕНИТЬ</button></div>`;
     }
-  }
-  // подсказка, если текущий по факту день — не этот
-  if (isToday && cursor && !isCursor) {
-    html += `<div class="donebar px"><span class="donestatus wait">ждёт выполнения: неделя ${cursor.week} · ${esc(cursor.title)}</span>
-      <button class="toolbtn" data-goto-cursor>→ К НЕМУ</button></div>`;
   }
   if (isToday && !cursor && P.length) {
     html += `<div class="donebar px"><span class="donestatus done">ЦИКЛ ЗАВЕРШЁН ■ все тренировки выполнены</span></div>`;
@@ -406,15 +426,9 @@ function renderDay() {
   $view.querySelectorAll('[data-q]').forEach(b =>
     b.addEventListener('click', () => openModal(b.dataset.q)));
 
-  // обработчики: выполнение дня
+  // обработчики: выполнение дня (всплывший день пишется в свою исходную неделю)
   $view.querySelectorAll('[data-done]').forEach(b =>
-    b.addEventListener('click', () => setDayStatus(curWeek, progKey, b.dataset.done || null)));
-  const gotoCur = $view.querySelector('[data-goto-cursor]');
-  if (gotoCur) gotoCur.addEventListener('click', () => {
-    const c = cursorInfo();
-    if (!c) return;
-    curWeek = c.week; curView = PROG_TO_TAB[c.progKey]; render();
-  });
+    b.addEventListener('click', () => setDayStatus(effWeek, progKey, b.dataset.done || null)));
 
   // обработчики: запись веса
   $view.querySelectorAll('[data-log]').forEach(btn =>
@@ -425,7 +439,7 @@ function renderDay() {
       if (!w && !note) { toast('ПУСТО — ВВЕДИ ВЕС ИЛИ ЗАМЕТКУ'); return; }
       store.entries.push({
         id: Date.now(), date: iso(new Date()), exName: btn.dataset.name,
-        week: curWeek, day: curView, weight: w, note, ts: new Date().toTimeString().slice(0, 5),
+        week: effWeek, day: curView, weight: w, note, ts: new Date().toTimeString().slice(0, 5),
       });
       saveStore();
       toast('ЗАПИСАНО ■');
