@@ -74,7 +74,11 @@ cd /opt/sport/server
 
 ```bash
 cd /opt/sport/repo && git pull
+# фронт:
 cp -r index.html src *.png manifest.json /opt/sport/server/web/
+# сервер (sport.service НЕ трогаем — там твой ключ Groq):
+cp server/main.py server/admin.py server/requirements.txt /opt/sport/server/
+cd /opt/sport/server && ./venv/bin/pip install -r requirements.txt
 systemctl restart sport
 ```
 
