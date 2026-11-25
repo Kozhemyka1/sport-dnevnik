@@ -26,8 +26,28 @@ const remote = {
   login: localStorage.getItem('sportlog.login') || null,
   online: false,
 };
-let programOverride = null; // программа с сервера (если есть) вместо встроенной
-const PROG = () => programOverride || WEEKS;
+let programOverride = loadProgLocal(); // программа аккаунта (локальная копия)
+const PROG = () => programOverride;
+
+function loadProgLocal() {
+  try { return JSON.parse(localStorage.getItem('sportlog.prog') || 'null'); }
+  catch (e) { return null; }
+}
+function saveProgLocal() {
+  if (programOverride) localStorage.setItem('sportlog.prog', JSON.stringify(programOverride));
+  else localStorage.removeItem('sportlog.prog');
+}
+
+let progTimer = null;
+function queueProgPush() {
+  if (!remote.token) return;
+  clearTimeout(progTimer);
+  progTimer = setTimeout(async () => {
+    try { await pushState({ program: programOverride }); }
+    catch (e) { remote.online = false; }
+  }, 800);
+}
+function saveProgram() { saveProgLocal(); queueProgPush(); }
 
 async function api(path, opts = {}) {
   const headers = { 'Content-Type': 'application/json', ...(opts.headers || {}) };
@@ -66,12 +86,14 @@ async function syncInit() {
     if (!r.ok) return;
     remote.online = true;
     const state = await r.json();
-    if (state.program) {
+    if (state.program && Array.isArray(state.program) && state.program.length) {
       programOverride = state.program;
-      if (curWeek > PROG().length) curWeek = PROG().length;
-    } else {
-      await pushState({ program: WEEKS }); // первый вход: встроенная программа становится шаблоном аккаунта
+      saveProgLocal();
+      if (curWeek > state.program.length) curWeek = state.program.length;
+    } else if (programOverride && programOverride.length) {
+      await pushState({ program: programOverride }); // на сервере пусто — заливаем локальную программу
     }
+    // если программы нет нигде — остаётся пустая, пользователь соберёт сам
     if (state.diary && Array.isArray(state.diary.entries) && state.diary.entries.length) {
       store = state.diary; // сервер новее локального — сервер главный
       saveLocal();
@@ -98,7 +120,7 @@ async function doLogout() {
   dropToken();
   localStorage.removeItem('sportlog.login');
   remote.login = null;
-  programOverride = null;
+  editMode = false;
   render();
 }
 
@@ -121,6 +143,20 @@ const TODAY = todayInfo();
 /* ---------- состояние ---------- */
 let curWeek = TODAY.week;
 let curView = TODAY.day; // mon..sun | 'diary' | 'info'
+let editMode = false;
+
+/* ---------- шаблоны для редактора программы ---------- */
+const newExercise = () => ({ n: 'Новое упражнение', s: '3×10', w: true });
+const newBlock = () => ({ t: 'Основная часть', items: [] });
+const newDay = title => ({ title, focus: '', dur: '', blocks: [newBlock()] });
+const newWeek = n => ({
+  n, theme: 'Новая неделя', rpe: '', hint: '',
+  days: {
+    d1: newDay('День 1'), d2: newDay('День 2'), d3: newDay('День 3'), d4: newDay('День 4'),
+    rest: { title: 'Отдых + мобилити', focus: 'Восстановление', dur: '', rest: true, blocks: [] },
+  },
+});
+function renumberWeeks(p) { p.forEach((w, i) => { w.n = i + 1; }); }
 
 /* ---------- DOM ---------- */
 const $view = document.getElementById('view');
@@ -150,12 +186,15 @@ function esc(s) {
 
 /* ---------- навигация ---------- */
 function renderNav() {
-  $weekNav.innerHTML = PROG().map(w =>
+  const P = PROG() || [];
+  $weekNav.innerHTML = P.map(w =>
     `<button class="navbtn ${w.n === curWeek ? 'active' : ''} ${w.n === TODAY.week && TODAY.inPlan ? 'today-mark' : ''}" data-week="${w.n}">
       НЕД ${w.n}<small>${esc(w.theme)}</small>
-    </button>`).join('');
-  $weekNav.querySelectorAll('button').forEach(b =>
+    </button>`).join('') +
+    `<button class="navbtn editbtn ${editMode ? 'active' : ''}" data-edit="1" title="Режим правки программы">✎</button>`;
+  $weekNav.querySelectorAll('[data-week]').forEach(b =>
     b.addEventListener('click', () => { curWeek = +b.dataset.week; if (curView === 'diary' || curView === 'info') curView = TODAY.day; render(); }));
+  $weekNav.querySelector('[data-edit]').addEventListener('click', () => { editMode = !editMode; render(); });
 
   const dayBtns = TAB_ORDER.map(d =>
     `<button class="navbtn ${d === curView ? 'active' : ''} ${d === TODAY.day && TODAY.inPlan ? 'today-mark' : ''}" data-day="${d}">${DAY_NAMES[d]}</button>`).join('');
@@ -198,10 +237,31 @@ function exRow(ex, wn, d, bi, ei) {
 }
 
 function renderDay() {
-  const wk = PROG()[curWeek - 1];
-  if (!wk) return;
-  const d = wk.days[REAL_TO_PROG[curView] || curView];
+  const P = PROG() || [];
+  const wk = P[curWeek - 1];
+
+  if (!wk) {
+    $view.innerHTML = `<section class="block px"><div class="empty">
+      ПРОГРАММА ПУСТАЯ<br><br>собери свою — или загрузи базовую</div></section>
+      <div class="toolbar">
+        <button class="toolbtn" id="btnNewWeek">+ СОЗДАТЬ НЕДЕЛЮ 1</button>
+        <button class="toolbtn" id="btnLoadBase">▼ ЗАГРУЗИТЬ БАЗОВУЮ</button>
+      </div>`;
+    document.getElementById('btnNewWeek').addEventListener('click', () => {
+      programOverride = [newWeek(1)];
+      curWeek = 1; saveProgram(); render();
+    });
+    document.getElementById('btnLoadBase').addEventListener('click', () => {
+      programOverride = JSON.parse(JSON.stringify(WEEKS));
+      saveProgram(); render();
+    });
+    return;
+  }
+
+  const d = wk.days[REAL_TO_PROG[curView] || curView] || wk.days.rest;
   const isToday = TODAY.inPlan && curWeek === TODAY.week && curView === TODAY.day;
+
+  if (editMode) { renderDayEdit(P, wk, d); return; }
 
   let html = `<div class="weekinfo px">
     <span class="theme">Неделя ${wk.n} — ${esc(wk.theme)}</span>
@@ -259,6 +319,105 @@ function renderDay() {
       saveStore();
       toast('ЗАПИСАНО ■');
       render();
+    }));
+}
+
+/* ---------- редактор программы ---------- */
+function renderDayEdit(P, wk, d) {
+  const inp = (val, ph) => `<input class="einput" value="${esc(val || '')}" placeholder="${esc(ph || '')}">`;
+
+  let html = `<div class="weekinfo px"><span class="theme" style="color:var(--warn)">РЕЖИМ ПРАВКИ — изменения сохраняются сразу</span></div>
+  <section class="block px editblock">
+    <div class="block-head"><h3>НЕДЕЛЯ</h3></div>
+    <label class="elabel">название недели</label><div data-ebind="wk.theme">${inp(wk.theme, 'например: Накопление')}</div>
+    <label class="elabel">нагрузка (RPE · вес)</label><div data-ebind="wk.rpe">${inp(wk.rpe, 'например: RPE 6–7 · 16 кг')}</div>
+    <label class="elabel">заметка к неделе</label><div data-ebind="wk.hint">${inp(wk.hint, 'короткая подсказка')}</div>
+    <div class="toolbar">
+      <button class="toolbtn" id="btnAddWeek">+ НЕДЕЛЯ</button>
+      <button class="toolbtn danger" id="btnDelWeek">УДАЛИТЬ НЕДЕЛЮ ${wk.n}</button>
+    </div>
+  </section>
+
+  <section class="block px editblock">
+    <div class="block-head"><h3>ДЕНЬ (${DAY_NAMES[curView]})</h3></div>
+    <label class="elabel">название дня</label><div data-ebind="d.title">${inp(d.title, 'например: День 1 · Толчок + ноги')}</div>
+    <label class="elabel">фокус</label><div data-ebind="d.focus">${inp(d.focus, 'например: Гиревая дисциплина')}</div>
+    <label class="elabel">время</label><div data-ebind="d.dur">${inp(d.dur, 'например: 60 мин')}</div>
+    <label class="echeck"><input type="checkbox" id="edRest" ${d.rest ? 'checked' : ''}> день отдыха</label>
+  </section>`;
+
+  (d.blocks || []).forEach((b, bi) => {
+    html += `<section class="block px editblock">
+      <div class="block-head"><h3>БЛОК ${bi + 1}</h3></div>
+      <label class="elabel">название блока</label><div data-ebind="b${bi}.t">${inp(b.t, 'Основная часть')}</div>
+      ${b.items.map((ex, ei) => `
+        <div class="editrow">
+          <div class="editrow-main">
+            <div data-ebind="b${bi}.i${ei}.n">${inp(ex.n, 'упражнение')}</div>
+            <div data-ebind="b${bi}.i${ei}.s">${inp(ex.s, 'схема: 3×10 · 16 кг')}</div>
+          </div>
+          <label class="echeck" title="показывать поле веса"><input type="checkbox" data-ew="${bi}.${ei}" ${ex.w ? 'checked' : ''}> вес</label>
+          <button class="del" data-dex="${bi}.${ei}" aria-label="Удалить упражнение">X</button>
+        </div>`).join('')}
+      <div class="toolbar">
+        <button class="toolbtn" data-addex="${bi}">+ УПРАЖНЕНИЕ</button>
+        <button class="toolbtn danger" data-delblock="${bi}">УДАЛИТЬ БЛОК</button>
+      </div>
+    </section>`;
+  });
+
+  html += `<div class="toolbar"><button class="toolbtn" id="btnAddBlock">+ БЛОК</button></div>`;
+
+  $view.innerHTML = html;
+
+  // текстовые поля: меняют модель без перерисовки (фокус не теряется)
+  $view.querySelectorAll('[data-ebind] input').forEach(el => {
+    el.addEventListener('input', () => {
+      const path = el.closest('[data-ebind]').dataset.ebind.split('.');
+      if (path[0] === 'wk') { wk[path[1]] = el.value; }
+      else if (path[0] === 'd') { d[path[1]] = el.value; }
+      else { // b<bi>.t или b<bi>.i<ei>.<f>
+        const b = d.blocks[+path[0].slice(1)];
+        if (path.length === 2) b.t = el.value;
+        else b.items[+path[1].slice(1)][path[2]] = el.value;
+      }
+      saveProgram();
+      renderNav(); // обновить подписи недель в навигаторе
+    });
+  });
+
+  document.getElementById('edRest').addEventListener('change', e => {
+    d.rest = e.target.checked; saveProgram(); render();
+  });
+
+  document.getElementById('btnAddWeek').addEventListener('click', () => {
+    P.push(newWeek(P.length + 1)); saveProgram(); curWeek = P.length; render();
+  });
+  document.getElementById('btnDelWeek').addEventListener('click', () => {
+    if (P.length <= 1) { toast('НЕЛЬЗЯ УДАЛИТЬ ПОСЛЕДНЮЮ НЕДЕЛЮ'); return; }
+    P.splice(curWeek - 1, 1); renumberWeeks(P);
+    curWeek = Math.min(curWeek, P.length); saveProgram(); render();
+  });
+  document.getElementById('btnAddBlock').addEventListener('click', () => {
+    d.blocks = d.blocks || []; d.blocks.push(newBlock()); saveProgram(); render();
+  });
+  $view.querySelectorAll('[data-addex]').forEach(b =>
+    b.addEventListener('click', () => {
+      d.blocks[+b.dataset.addex].items.push(newExercise()); saveProgram(); render();
+    }));
+  $view.querySelectorAll('[data-delblock]').forEach(b =>
+    b.addEventListener('click', () => {
+      d.blocks.splice(+b.dataset.delblock, 1); saveProgram(); render();
+    }));
+  $view.querySelectorAll('[data-dex]').forEach(b =>
+    b.addEventListener('click', () => {
+      const [bi, ei] = b.dataset.dex.split('.').map(Number);
+      d.blocks[bi].items.splice(ei, 1); saveProgram(); render();
+    }));
+  $view.querySelectorAll('[data-ew]').forEach(c =>
+    c.addEventListener('change', () => {
+      const [bi, ei] = c.dataset.ew.split('.').map(Number);
+      d.blocks[bi].items[ei].w = c.checked; saveProgram();
     }));
 }
 

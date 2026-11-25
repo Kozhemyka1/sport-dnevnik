@@ -187,6 +187,26 @@ details.px li::marker{content:"■ ";color:var(--line);font-size:12px}
 }
 .toolbtn:hover{color:var(--text-bright);border-color:var(--text-dim)}
 .toolbtn:active{transform:translate(1px,1px)}
+.toolbtn.danger{color:#d87d7d;border-color:#5a2e2e}
+.editbtn{font-size:12px;min-width:44px}
+.editblock{padding-bottom:14px}
+.elabel{display:block;font-size:16px;color:var(--text-dim);margin:10px 0 2px;padding:0 14px}
+.einput{
+  width:calc(100% - 28px);margin:0 14px;background:var(--bg);
+  border:2px solid var(--line-dim);color:var(--text-bright);
+  font-family:var(--px-body);font-size:20px;padding:6px 10px;
+}
+.einput:focus{border-color:var(--warn);outline:none}
+.editrow{display:flex;gap:8px;align-items:center;padding:6px 14px;border-top:2px solid var(--line-dim)}
+.editrow-main{flex:1;min-width:0;display:grid;gap:4px}
+.editrow-main .einput{width:100%;margin:0}
+.editrow .del{
+  background:none;border:2px solid var(--line);color:var(--text-dim);
+  font-family:var(--px-head);font-size:9px;padding:6px 8px;cursor:pointer;flex:none
+}
+.editrow .del:hover{color:#d87d7d;border-color:#d87d7d}
+.echeck{display:flex;align-items:center;gap:6px;font-size:18px;color:var(--text-dim);padding:8px 14px;flex:none}
+.echeck input{width:16px;height:16px;accent-color:var(--warn)}
 
 .restbox{padding:30px 16px;text-align:center}
 .restbox .big{font-family:var(--px-head);font-size:12px;color:var(--text-dim);line-height:2}
