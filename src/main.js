@@ -284,8 +284,9 @@ function renderDay() {
     html += `<section class="block px"><div class="restbox"><div class="big">ОТДЫХ<br><br>сон · еда · прогулка<br>мягкая растяжка по желанию</div></div></section>`;
   } else {
     if (!d.rest) {
-      const warmItems = d.warmNote ? [...WARMUP.items, 'Акцент дня: ' + d.warmNote] : WARMUP.items;
-      html += `<details class="px block"><summary>${esc(WARMUP.title)}</summary><ul>${warmItems.map(i => `<li>${esc(i)}</li>`).join('')}</ul></details>`;
+      const warm = d.warm || WARMUP;
+      const warmItems = d.warmNote ? [...warm.items, 'Акцент дня: ' + d.warmNote] : warm.items;
+      html += `<details class="px block"><summary>${esc(warm.title)}</summary><ul>${warmItems.map(i => `<li>${esc(i)}</li>`).join('')}</ul></details>`;
     }
 
     d.blocks.forEach((b, bi) => {

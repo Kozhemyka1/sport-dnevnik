@@ -244,17 +244,47 @@ def docx_to_text(raw: bytes) -> str:
                 lines.append(' | '.join(cells))
     return '\n'.join(lines)
 
-def split_weeks(text: str) -> list:
-    """Режет текст на куски по заголовкам 'Неделя N'. Если не нашёл — один кусок целиком."""
+def split_weeks(text: str):
+    """Режет текст на куски по заголовкам 'Неделя N'. Возвращает (куски, преамбула)."""
     parts = re.split(r'(?im)^\s*(?:\d+\s*[.\)]\s*)?(неделя\s*\d+\b[^\n]*)$', text)
+    pre = parts[0] if parts else ''
     if len(parts) < 3:
-        return [text]
+        return [text], ''
     out = []
     for i in range(1, len(parts), 2):
         chunk = parts[i] + '\n' + parts[i + 1]
         if chunk.strip():
             out.append(chunk)
-    return out or [text]
+    return (out or [text]), pre
+
+PREAMBLE_PROMPT = '''Ты — парсер общих блоков программы тренировок. Тебе дают вводную часть текста программы.
+Верни ТОЛЬКО JSON без пояснений:
+{"mobility":[{"n":"упражнение","s":"схема, например 2×10 /нога"}],
+ "warmup":["шаг разминки","..."],
+ "cooldown":["шаг заминки","..."]}
+Правила:
+- mobility: упражнения ежедневного блока мобилити/зарядки (если есть в тексте), иначе [].
+- warmup: шаги общей разминки (если описаны), иначе [].
+- cooldown: шаги общей заминки (если описаны), иначе [].
+- ничего не выдумывай, сокращай формулировки до коротких строк.
+Текст:
+'''
+
+async def groq_parse_preamble(text: str) -> str:
+    """Вводная часть -> JSON-строка с мобилити/разминкой/заминкой."""
+    async with httpx.AsyncClient(timeout=90) as client:
+        r = await client.post(
+            'https://api.groq.com/openai/v1/chat/completions',
+            headers={'Authorization': f'Bearer {GROQ_API_KEY}'},
+            json={
+                'model': GROQ_MODEL,
+                'messages': [{'role': 'user', 'content': PREAMBLE_PROMPT + text}],
+                'temperature': 0.1,
+                'max_tokens': 4000,
+                'response_format': {'type': 'json_object'},
+            })
+        r.raise_for_status()
+        return r.json()['choices'][0]['message']['content']
 
 async def groq_parse_weeks(text: str) -> str:
     """Один запрос к Groq: текст -> JSON-строка. 429 — ждём и повторяем."""
@@ -358,9 +388,30 @@ async def import_program_ep(req: Request):
     if len(text.strip()) < 30:
         return JSONResponse({'error': 'empty'}, status_code=400)
     # длинный файл парсим по неделям: так модель ничего не теряет
-    chunks = split_weeks(text)
-    program = []
+    chunks, pre = split_weeks(text)
+
+    # преамбула: ежедневная мобилити + общая разминка/заминка
+    mobility, warm_steps, cool_steps = [], [], []
     failed = 0
+    if len(pre.strip()) > 100:
+        for _ in range(2):
+            try:
+                pd = json.loads(await groq_parse_preamble(pre[:8000]))
+                mobility = [
+                    {'n': str(x['n'])[:120], 's': str(x.get('s') or '')[:200], 'w': False}
+                    for x in (pd.get('mobility') or [])
+                    if isinstance(x, dict) and x.get('n')
+                ][:15]
+                warm_steps = [str(x)[:200] for x in (pd.get('warmup') or []) if str(x).strip()][:12]
+                cool_steps = [str(x)[:200] for x in (pd.get('cooldown') or []) if str(x).strip()][:12]
+            except Exception:
+                mobility, warm_steps, cool_steps = [], [], []
+            if mobility or warm_steps or cool_steps:
+                break
+        if not (mobility or warm_steps or cool_steps):
+            failed += 1  # преамбула не разобралась — предупредим в ответе
+
+    program = []
     for chunk in chunks[:8]:  # максимум 8 недель
         part = None
         for _ in range(2):  # пустой/битый ответ — один повтор
@@ -379,6 +430,15 @@ async def import_program_ep(req: Request):
         return JSONResponse({'error': 'parse_failed'}, status_code=502)
     for i, w in enumerate(program):
         w['n'] = i + 1  # сквозная нумерация после склейки
+        if mobility:
+            w['days']['rest']['blocks'] = [{'t': 'Ежедневный минимум — мобилити', 'items': [dict(x) for x in mobility]}]
+        for k in ('d1', 'd2', 'd3', 'd4'):
+            d = w['days'][k]
+            if not d.get('rest'):
+                if warm_steps:
+                    d['warm'] = {'title': 'Разминка', 'items': list(warm_steps)}
+                if cool_steps:
+                    d['cool'] = {'title': 'Заминка', 'items': list(cool_steps)}
     return {'program': program, 'skipped': failed}
 
 # ---------- статика (само приложение) ----------
