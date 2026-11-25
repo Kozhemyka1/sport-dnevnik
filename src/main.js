@@ -705,6 +705,7 @@ function renderInfo() {
 /* ---------- главный рендер ---------- */
 function render() {
   if (!remote.token) { renderGate(); return; } // без входа — только экран логина
+  document.querySelector('.top').style.display = '';
   renderNav();
   if (curView === 'diary') renderDiary();
   else if (curView === 'info') renderInfo();
@@ -714,6 +715,7 @@ function render() {
 
 /* ---------- экран входа ---------- */
 function renderGate() {
+  document.querySelector('.top').style.display = 'none'; // шапку на воротах прячем
   $weekNav.innerHTML = '';
   $dayNav.innerHTML = '';
   $view.innerHTML = `<section class="block px gate">
