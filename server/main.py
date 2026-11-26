@@ -135,6 +135,30 @@ async def logout_ep(req: Request):
             c.commit()
     return {'ok': True}
 
+class PassIn(BaseModel):
+    old_password: str
+    new_password: str
+
+@app.post('/api/password')
+def password_ep(body: PassIn, req: Request):
+    login, err = require(req)
+    if err: return err
+    new = body.new_password
+    if len(new) < 6:
+        return JSONResponse({'error': 'too_short'}, status_code=400)
+    if not check_user(login, body.old_password):
+        return JSONResponse({'error': 'bad_old'}, status_code=403)
+    token = secrets.token_urlsafe(32)
+    with closing(db()) as c:
+        c.execute('UPDATE users SET passhash=? WHERE login=?',
+                  (bcrypt.hashpw(new.encode(), bcrypt.gensalt()), login))
+        # гасим все сессии этого логина, текущему устройству выдаём свежий токен
+        c.execute('DELETE FROM tokens WHERE login=?', (login,))
+        c.execute('INSERT INTO tokens VALUES(?,?,?)',
+                  (token, login, int(time.time()) + TOKEN_TTL))
+        c.commit()
+    return {'token': token}
+
 @app.get('/api/state')
 def get_state(req: Request):
     login, err = require(req)

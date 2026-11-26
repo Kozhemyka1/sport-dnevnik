@@ -812,6 +812,9 @@ function renderInfo() {
   <section class="block px" style="padding:12px 14px">
     ${remote.token
       ? `<div style="font-size:20px">вход выполнен: <b style="color:var(--accent);font-weight:400">${esc(remote.login || '')}</b> · синхронизация: <b style="color:${remote.online ? 'var(--accent)' : 'var(--warn)'};font-weight:400">${remote.online ? 'онлайн' : 'офлайн — записи локально'}</b></div>
+         <div style="font-size:18px;color:var(--text-dim);margin:10px 0 4px">сменить пароль (минимум 6 символов):</div>
+         <div class="logrow"><input id="passOld" type="password" placeholder="текущий" autocomplete="current-password" style="width:100px"><input id="passNew" type="password" placeholder="новый" autocomplete="new-password" style="width:100px"><input id="passNew2" type="password" placeholder="ещё раз" autocomplete="new-password" style="width:100px"><button class="logbtn" id="btnPass">СМЕНИТЬ</button></div>
+         <div id="passErr" style="color:var(--danger);font-size:18px;margin-top:6px"></div>
          <div class="toolbar"><button class="toolbtn" id="btnLogout">ВЫЙТИ</button></div>`
       : `<div style="font-size:20px;color:var(--text-dim);margin-bottom:8px">вход не выполнен — данные только на этом устройстве</div>
          <div class="logrow"><input id="loginName" placeholder="логин" autocomplete="username" style="width:130px"><input id="loginPass" type="password" placeholder="пароль" autocomplete="current-password" style="width:130px"><button class="logbtn" id="btnLogin">ВОЙТИ</button></div>
@@ -873,6 +876,30 @@ function renderInfo() {
   });
   const btnLogout = document.getElementById('btnLogout');
   if (btnLogout) btnLogout.addEventListener('click', () => { doLogout(); toast('ВЫШЕЛ ИЗ АККАУНТА'); });
+
+  const btnPass = document.getElementById('btnPass');
+  if (btnPass) btnPass.addEventListener('click', async () => {
+    const o = document.getElementById('passOld').value;
+    const n1 = document.getElementById('passNew').value;
+    const n2 = document.getElementById('passNew2').value;
+    const err = document.getElementById('passErr');
+    err.style.color = 'var(--danger)';
+    if (!o || !n1) { err.textContent = 'заполни все поля'; return; }
+    if (n1.length < 6) { err.textContent = 'новый пароль — минимум 6 символов'; return; }
+    if (n1 !== n2) { err.textContent = 'новые пароли не совпадают'; return; }
+    err.textContent = '…';
+    try {
+      const r = await api('/api/password', { method: 'POST', body: JSON.stringify({ old_password: o, new_password: n1 }) });
+      if (r.status === 403) { err.textContent = 'текущий пароль неверный'; return; }
+      if (!r.ok) { err.textContent = 'не получилось — попробуй ещё раз'; return; }
+      const d = await r.json();
+      remote.token = d.token;
+      localStorage.setItem('sportlog.token', d.token);
+      err.style.color = 'var(--accent)';
+      err.textContent = '■ ПАРОЛЬ ОБНОВЛЁН — остальные устройства выкинуло';
+      ['passOld', 'passNew', 'passNew2'].forEach(id => { document.getElementById(id).value = ''; });
+    } catch (e) { err.textContent = 'нет связи с сервером'; }
+  });
 
   const btnStartToday = document.getElementById('btnStartToday');
   if (btnStartToday) btnStartToday.addEventListener('click', () => {
