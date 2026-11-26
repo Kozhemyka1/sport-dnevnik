@@ -1,6 +1,6 @@
 import {
   START_DATE, DAY_NAMES, DAY_ORDER, TAB_ORDER, REAL_TO_PROG, DESCR,
-  WARMUP, COOLDOWN, RULES, MEASUREMENTS, WEEKS, GLOSSARY,
+  WARMUP, COOLDOWN, RULES, MEASUREMENTS, GLOSSARY, STARTER_WEEKS,
 } from './data.js';
 
 const LS_KEY = 'sportlog.v1';
@@ -121,12 +121,16 @@ async function syncInit() {
       await pushState({ program: programOverride }); // на сервере пусто — заливаем локальную программу
     }
     // если программы нет нигде — остаётся пустая, пользователь соберёт сам
-    if (state.diary && Array.isArray(state.diary.entries) && state.diary.entries.length) {
-      store = {  // сервер новее локального — сервер главный
-        entries: state.diary.entries,
-        meas: state.diary.meas || {},
-        done: state.diary.done || {},
-        startDate: state.diary.startDate || null,
+    const sd = state.diary;
+    const serverHasDiary = !!(sd && (
+      (Array.isArray(sd.entries) && sd.entries.length) || sd.startDate ||
+      (sd.done && Object.keys(sd.done).length)));
+    if (serverHasDiary) {  // сервер новее локального — сервер главный
+      store = {
+        entries: sd.entries || [],
+        meas: sd.meas || {},
+        done: sd.done || {},
+        startDate: sd.startDate || null,
       };
       saveLocal();
     } else if (store.entries.length || store.startDate || Object.keys(store.done).length) {
@@ -144,6 +148,7 @@ async function doLogin(login, password) {
   localStorage.setItem('sportlog.token', d.token);
   localStorage.setItem('sportlog.login', login);
   await syncInit();
+  curWeek = TODAY.week; curView = TODAY.day; // якорь мог приехать с сервером — переоткрываем на сегодня
   render();
 }
 
@@ -311,19 +316,22 @@ function renderDay() {
 
   if (!wk) {
     $view.innerHTML = `<section class="block px"><div class="empty">
-      ПРОГРАММА ПУСТАЯ<br><br>собери свою — или загрузи базовую</div></section>
+      ПРОГРАММА ПУСТАЯ<br><br>загрузи свою из файла<br>или начни со стартового шаблона</div></section>
       <div class="toolbar">
-        <button class="toolbtn" id="btnNewWeek">+ СОЗДАТЬ НЕДЕЛЮ 1</button>
-        <button class="toolbtn" id="btnLoadBase">▼ ЗАГРУЗИТЬ БАЗОВУЮ</button>
         <button class="toolbtn" id="btnImportProg">▲ ИМПОРТ ИЗ ФАЙЛА</button>
+        <button class="toolbtn" id="btnLoadBase">▼ СТАРТОВЫЙ ШАБЛОН</button>
+        <button class="toolbtn" id="btnNewWeek">+ ПУСТАЯ НЕДЕЛЯ</button>
       </div>`;
     document.getElementById('btnNewWeek').addEventListener('click', () => {
       programOverride = [newWeek(1)];
-      curWeek = 1; saveProgram(); render();
+      store.done = {}; store.startDate = iso(new Date()); saveStore(); // цикл начинается сегодня
+      curWeek = 1; curView = TODAY.day; saveProgram(); render();
     });
     document.getElementById('btnLoadBase').addEventListener('click', () => {
-      programOverride = JSON.parse(JSON.stringify(WEEKS));
-      saveProgram(); render();
+      programOverride = JSON.parse(JSON.stringify(STARTER_WEEKS));
+      store.done = {}; store.startDate = iso(new Date()); saveStore();
+      curWeek = 1; curView = TODAY.day; saveProgram(); render();
+      toast('ШАБЛОН ЗАГРУЖЕН ▼');
     });
     document.getElementById('btnImportProg').addEventListener('click', () =>
       document.getElementById('progFile').click());
@@ -991,5 +999,6 @@ function renderGate() {
 
 (async () => {
   await syncInit();
+  if (remote.token) { curWeek = TODAY.week; curView = TODAY.day; } // открываемся на сегодняшний день
   render();
 })();
