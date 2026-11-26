@@ -2,7 +2,7 @@ import {
   START_DATE, DAY_NAMES, DAY_ORDER, TAB_ORDER, REAL_TO_PROG, DESCR,
   WARMUP, COOLDOWN, RULES, MEASUREMENTS, GLOSSARY, STARTER_WEEKS, STARTER_META_INFO,
 } from './data.js?v=20261126';
-import { SPRITE_MAP, mountSprite, setGenderFn } from './sprites.js?v=20261126b';
+import { SPRITE_MAP, spriteFor, mountSprite, setGenderFn } from './sprites.js?v=20261126c';
 
 const LS_KEY = 'sportlog.v1';
 
@@ -336,7 +336,7 @@ function cursorInfo() {
 function exRow(ex, wn, d, bi, ei) {
   const id = `w${wn}-${d}-${bi}-${ei}`;
   const last = lastLog(ex.n);
-  const spr = SPRITE_MAP[ex.n];
+  const spr = spriteFor(ex.n);
   return `<div class="ex" data-exid="${id}">
     <div class="ex-row">
       <span class="ex-name">${esc(ex.n)}</span>

@@ -43,6 +43,13 @@ export const SPRITES = {
     { v: 's', h: [8, 4], s: [8, 7], p: [7, 13], eL: [8.5, 4.5], hL: [8, 2.5], kL: [6, 17], fL: [7, 22], kR: [5, 17], fR: [5.5, 22], kb: [[8, 2.5, 'up']] },
     { v: 's', h: [8, 4], s: [8, 7], p: [7, 12], eL: [9.5, 11], hL: [10, 14], kL: [7, 17], fL: [7, 22], kR: [6, 17], fR: [5.5, 22], kb: [[10, 14, 'down']] },
   ],
+  // махи гирей: замах между ног → взмах до груди
+  swing: [
+    { v: 's', h: [10, 9], s: [9, 12], p: [5.5, 14], eL: [8, 16], hL: [6.5, 17], kL: [7, 18], fL: [6, 22], kR: [5.5, 18], fR: [4.5, 22], kb: [[6.5, 17, 'down']] },
+    { v: 's', h: [9, 6], s: [8.5, 9], p: [6.5, 13], eL: [9.5, 13], hL: [10, 15], kL: [7, 17], fL: [6.5, 22], kR: [6, 17.5], fR: [5.5, 22], kb: [[10, 15, 'down']] },
+    { v: 's', h: [8, 4], s: [8, 7], p: [7, 12], eL: [10, 8.5], hL: [12, 9.5], kL: [7, 17], fL: [7, 22], kR: [6, 17], fR: [5.5, 22], kb: [[12.5, 9.5, 'down']] },
+    { v: 's', h: [9, 6], s: [8.5, 9], p: [6.5, 13], eL: [9.5, 13], hL: [10, 15], kL: [7, 17], fL: [6.5, 22], kR: [6, 17.5], fR: [5.5, 22], kb: [[10, 15, 'down']] },
+  ],
   // тяга в наклоне (вид сбоку)
   row: [
     { v: 's', h: [11, 8], s: [10, 11], p: [6, 12], eL: [10, 15], hL: [10, 18], kL: [7, 17], fL: [6.5, 22], kR: [5, 17], fR: [4.5, 22], kb: [[10, 18, 'down']] },
@@ -106,7 +113,31 @@ export const SPRITES = {
   ],
 };
 
-// упражнение → категория анимации (пока: неделя 1)
+// упражнение → категория анимации: сначала точное совпадение, потом ключевые слова.
+// Работает с любой программой (стандартной или импортированной).
+export function spriteFor(name) {
+  if (SPRITE_MAP[name]) return SPRITE_MAP[name];
+  const n = String(name || '').toLowerCase();
+  if (n.includes('рывок')) return 'snatch';
+  if (n.includes('махи') || n.includes('мах гирей') || n.includes('свинг')) return 'swing';
+  if (n.includes('толчок') || n.includes('длинный цикл')) return 'jerk';
+  if (n.includes('присед') || n.includes('казак')) return 'squat';
+  if (n.includes('турецк') || n.includes('фиксация') || n.includes('гиря на грудь')) return 'fix';
+  if (n.includes('подтягиван')) return 'pullup';
+  if (n.includes('жим')) return 'press';
+  if (n.includes('тяга') || n.includes('тягу') || n.includes('разведение') || n.includes('ротация')) return 'row';
+  if (n.includes('выпад')) return 'lunge';
+  if (n.includes('планка')) return 'plank';
+  if (n.includes('вис')) return 'hang';
+  if (n.includes('переноска') || n.includes('фермер') || n.includes('чемодан')) return 'carry';
+  if (n.includes('гребля') || n.includes('гребл') || n.includes('аэробайк') || n.includes('байк') || n.includes('вело')) return 'cardio';
+  if (n.includes('прыж') || n.includes('медбол') || n.includes('бросок')) return 'jump';
+  if (n.includes('мост')) return 'bridge';
+  if (n.includes('медвеж') || n.includes('по-звериному')) return 'crawl';
+  return null;
+}
+
+// точные соответствия (приоритет над ключевыми словами)
 export const SPRITE_MAP = {
   'Гребля, разогрев': 'cardio',
   'Аэробайк, интервалы': 'cardio',
