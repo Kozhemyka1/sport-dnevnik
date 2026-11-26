@@ -182,7 +182,7 @@ async def put_state(req: Request):
         return JSONResponse({'error': 'bad_json'}, status_code=400)
     now = int(time.time())
     with closing(db()) as c:
-        for key in ('program', 'diary'):
+        for key in ('program', 'diary', 'meta'):
             if key in body:
                 c.execute(
                     'INSERT INTO kv(login,key,value,updated_at) VALUES(?,?,?,?) '

@@ -1,6 +1,6 @@
 import {
   START_DATE, DAY_NAMES, DAY_ORDER, TAB_ORDER, REAL_TO_PROG, DESCR,
-  WARMUP, COOLDOWN, RULES, MEASUREMENTS, GLOSSARY, STARTER_WEEKS,
+  WARMUP, COOLDOWN, RULES, MEASUREMENTS, GLOSSARY, STARTER_WEEKS, STARTER_META_INFO,
 } from './data.js';
 
 const LS_KEY = 'sportlog.v1';
@@ -76,6 +76,34 @@ function queueProgPush() {
 }
 function saveProgram() { saveProgLocal(); queueProgPush(); }
 
+/* ---------- мета-инфо аккаунта: правила, замеры, обозначения ---------- */
+function loadMetaLocal() {
+  try { return JSON.parse(localStorage.getItem('sportlog.meta') || 'null'); }
+  catch (e) { return null; }
+}
+let metaOverride = loadMetaLocal(); // null = статичный дефолт из data.js
+const META_DEFAULT = () => ({
+  rules: [...RULES],
+  meas: [...MEASUREMENTS],
+  glossary: GLOSSARY.map(p => [...p]),
+});
+const META = () => metaOverride || META_DEFAULT();
+function metaMutable() { if (!metaOverride) metaOverride = META_DEFAULT(); return metaOverride; }
+function saveMetaLocal() {
+  if (metaOverride) localStorage.setItem('sportlog.meta', JSON.stringify(metaOverride));
+  else localStorage.removeItem('sportlog.meta');
+}
+let metaTimer = null;
+function saveMeta() {
+  saveMetaLocal();
+  if (!remote.token) return;
+  clearTimeout(metaTimer);
+  metaTimer = setTimeout(async () => {
+    try { await pushState({ meta: metaOverride }); }
+    catch (e) { remote.online = false; }
+  }, 800);
+}
+
 async function api(path, opts = {}) {
   const headers = { 'Content-Type': 'application/json', ...(opts.headers || {}) };
   if (remote.token) headers['Authorization'] = 'Bearer ' + remote.token;
@@ -135,6 +163,12 @@ async function syncInit() {
       saveLocal();
     } else if (store.entries.length || store.startDate || Object.keys(store.done).length) {
       await pushState({ diary: store }); // на сервере пусто — заливаем локальный дневник
+    }
+    if (state.meta && typeof state.meta === 'object') {
+      metaOverride = state.meta;
+      saveMetaLocal();
+    } else if (metaOverride) {
+      await pushState({ meta: metaOverride }); // на сервере пусто — заливаем локальную мету
     }
   } catch (e) { remote.online = false; }
 }
@@ -324,11 +358,13 @@ function renderDay() {
       </div>`;
     document.getElementById('btnNewWeek').addEventListener('click', () => {
       programOverride = [newWeek(1)];
+      if (!metaOverride) { metaOverride = JSON.parse(JSON.stringify(STARTER_META_INFO)); saveMeta(); }
       store.done = {}; store.startDate = iso(new Date()); saveStore(); // цикл начинается сегодня
       curWeek = 1; curView = TODAY.day; saveProgram(); render();
     });
     document.getElementById('btnLoadBase').addEventListener('click', () => {
       programOverride = JSON.parse(JSON.stringify(STARTER_WEEKS));
+      if (!metaOverride) { metaOverride = JSON.parse(JSON.stringify(STARTER_META_INFO)); saveMeta(); }
       store.done = {}; store.startDate = iso(new Date()); saveStore();
       curWeek = 1; curView = TODAY.day; saveProgram(); render();
       toast('ШАБЛОН ЗАГРУЖЕН ▼');
@@ -816,6 +852,8 @@ document.getElementById('progFile').addEventListener('change', e => {
 
 /* ---------- инфо ---------- */
 function renderInfo() {
+  const M = META();
+  const inp = (val, ph) => `<input class="einput" value="${esc(val || '')}" placeholder="${esc(ph || '')}">`;
   let html = `<div class="dayhead px"><h2>АККАУНТ</h2></div>
   <section class="block px" style="padding:12px 14px">
     ${remote.token
@@ -852,23 +890,34 @@ function renderInfo() {
     </div>
   </section>
 
+  ${editMode ? `<div class="weekinfo px"><span class="theme" style="color:var(--warn)">РЕЖИМ ПРАВКИ — правила, замеры и обозначения ниже редактируются</span></div>` : ''}
+
   <div class="dayhead px"><h2>ПРАВИЛА МЕСЯЦА</h2></div>
-  <section class="block px"><ul style="padding:12px 18px 12px 30px">
-    ${RULES.map(r => `<li style="padding:4px 0;font-size:20px;list-style:square">${esc(r)}</li>`).join('')}
-  </ul></section>
+  ${editMode ? `<section class="block px editblock">
+    ${M.rules.map((r, i) => `<div class="editrow"><div class="editrow-main"><div data-mbind="rules.${i}">${inp(r, 'правило')}</div></div><button class="del" data-mdel="rules.${i}" aria-label="Удалить правило">X</button></div>`).join('')}
+    <div class="toolbar"><button class="toolbtn" data-madd="rules">+ ПРАВИЛО</button></div>
+  </section>` : `<section class="block px"><ul style="padding:12px 18px 12px 30px">
+    ${M.rules.map(r => `<li style="padding:4px 0;font-size:20px;list-style:square">${esc(r)}</li>`).join('')}
+  </ul></section>`}
 
   <div class="dayhead px"><h2>ЗАМЕРЫ «ДО»</h2>
-    <div class="meta"><span>отметь выполненное</span></div></div>
-  <section class="block px"><ul class="meas" style="padding:12px 18px 12px 20px;list-style:none">
-    ${MEASUREMENTS.map((m, i) => `<li class="${store.meas[i] ? 'done' : ''}" style="padding:5px 0;font-size:20px">
+    ${editMode ? '' : '<div class="meta"><span>отметь выполненное</span></div>'}</div>
+  ${editMode ? `<section class="block px editblock">
+    ${M.meas.map((m, i) => `<div class="editrow"><div class="editrow-main"><div data-mbind="meas.${i}">${inp(m, 'замер')}</div></div><button class="del" data-mdel="meas.${i}" aria-label="Удалить замер">X</button></div>`).join('')}
+    <div class="toolbar"><button class="toolbtn" data-madd="meas">+ ЗАМЕР</button></div>
+  </section>` : `<section class="block px"><ul class="meas" style="padding:12px 18px 12px 20px;list-style:none">
+    ${M.meas.map((m, i) => `<li class="${store.meas[i] ? 'done' : ''}" style="padding:5px 0;font-size:20px">
       <input type="checkbox" id="meas${i}" data-meas="${i}" ${store.meas[i] ? 'checked' : ''}>
       <label for="meas${i}"><span>${esc(m)}</span></label></li>`).join('')}
-  </ul></section>
+  </ul></section>`}
 
   <div class="dayhead px"><h2>ОБОЗНАЧЕНИЯ</h2></div>
-  <section class="block px"><ul style="padding:12px 18px 12px 30px">
-    ${GLOSSARY.map(([t, d]) => `<li style="padding:4px 0;font-size:20px;list-style:square"><b style="color:var(--warn);font-weight:400">${esc(t)}</b> — ${esc(d)}</li>`).join('')}
-  </ul></section>`;
+  ${editMode ? `<section class="block px editblock">
+    ${M.glossary.map((p, i) => `<div class="editrow"><div class="editrow-main"><div data-mbind="gloss.${i}.0">${inp(p[0], 'термин')}</div><div data-mbind="gloss.${i}.1">${inp(p[1], 'расшифровка')}</div></div><button class="del" data-mdel="gloss.${i}" aria-label="Удалить термин">X</button></div>`).join('')}
+    <div class="toolbar"><button class="toolbtn" data-madd="gloss">+ ТЕРМИН</button></div>
+  </section>` : `<section class="block px"><ul style="padding:12px 18px 12px 30px">
+    ${M.glossary.map(([t, d]) => `<li style="padding:4px 0;font-size:20px;list-style:square"><b style="color:var(--warn);font-weight:400">${esc(t)}</b> — ${esc(d)}</li>`).join('')}
+  </ul></section>`}`;
 
   $view.innerHTML = html;
 
@@ -948,6 +997,36 @@ function renderInfo() {
       store.meas[c.dataset.meas] = c.checked;
       saveStore();
       c.closest('li').classList.toggle('done', c.checked);
+    }));
+
+  // правка правил/замеров/обозначений (режим ✎): меняют мету аккаунта
+  $view.querySelectorAll('[data-mbind] input').forEach(el => {
+    el.addEventListener('input', () => {
+      const m = metaMutable();
+      const [sec, i, f] = el.closest('[data-mbind]').dataset.mbind.split('.');
+      if (sec === 'rules') m.rules[+i] = el.value;
+      else if (sec === 'meas') m.meas[+i] = el.value;
+      else m.glossary[+i][+f] = el.value;
+      saveMeta();
+    });
+  });
+  $view.querySelectorAll('[data-madd]').forEach(b =>
+    b.addEventListener('click', () => {
+      const m = metaMutable();
+      const sec = b.dataset.madd;
+      if (sec === 'rules') m.rules.push('Новое правило');
+      else if (sec === 'meas') m.meas.push('Новый замер');
+      else m.glossary.push(['Термин', 'расшифровка']);
+      saveMeta(); render();
+    }));
+  $view.querySelectorAll('[data-mdel]').forEach(b =>
+    b.addEventListener('click', () => {
+      const m = metaMutable();
+      const [sec, i] = b.dataset.mdel.split('.');
+      if (sec === 'rules') m.rules.splice(+i, 1);
+      else if (sec === 'meas') m.meas.splice(+i, 1);
+      else m.glossary.splice(+i, 1);
+      saveMeta(); render();
     }));
 }
 
