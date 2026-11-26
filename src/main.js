@@ -298,7 +298,7 @@ function exRow(ex, wn, d, bi, ei) {
     ${ex.w ? `<div class="logrow">
       <label for="w-${id}">вес, кг</label>
       <input id="w-${id}" inputmode="decimal" placeholder="—" data-weight>
-      <input class="note" placeholder="заметка (повторы, самочувствие)" data-note>
+      <input class="note" placeholder="заметка" data-note>
       <button class="logbtn" data-log="${id}" data-name="${esc(ex.n)}">ЗАПИСАТЬ</button>
       ${last ? `<span class="lastlog">последнее: <b>${esc(last.weight || '—')}${last.weight ? ' кг' : ''}</b> ${last.note ? '· ' + esc(last.note) : ''} · ${last.date.slice(8)}.${last.date.slice(5, 7)}</span>` : ''}
     </div>` : (last ? `<div class="logrow"><span class="lastlog">в дневнике: <b>${esc(last.weight || '')}${last.weight ? ' кг' : ''}</b> ${last.note ? esc(last.note) : ''}</span></div>` : '')}
