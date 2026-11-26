@@ -1,7 +1,7 @@
 import {
   START_DATE, DAY_NAMES, DAY_ORDER, TAB_ORDER, REAL_TO_PROG, DESCR,
   WARMUP, COOLDOWN, RULES, MEASUREMENTS, GLOSSARY, STARTER_WEEKS, STARTER_META_INFO,
-} from './data.js';
+} from './data.js?v=20261126';
 
 const LS_KEY = 'sportlog.v1';
 
@@ -52,6 +52,7 @@ const remote = {
   token: localStorage.getItem('sportlog.token') || null,
   login: localStorage.getItem('sportlog.login') || null,
   online: false,
+  isAdmin: false,
 };
 let programOverride = loadProgLocal(); // программа аккаунта (локальная копия)
 const PROG = () => programOverride;
@@ -129,7 +130,7 @@ function queuePush() {
 }
 
 function dropToken() {
-  remote.token = null; remote.online = false;
+  remote.token = null; remote.online = false; remote.isAdmin = false;
   localStorage.removeItem('sportlog.token');
 }
 
@@ -170,6 +171,10 @@ async function syncInit() {
     } else if (metaOverride) {
       await pushState({ meta: metaOverride }); // на сервере пусто — заливаем локальную мету
     }
+    try {
+      const me = await api('/api/me');
+      if (me.ok) remote.isAdmin = !!(await me.json()).is_admin;
+    } catch (e) { /* старый сервер без /api/me — админки просто не будет */ }
   } catch (e) { remote.online = false; }
 }
 
@@ -867,6 +872,15 @@ function renderInfo() {
          <div id="loginErr" style="color:var(--danger);font-size:18px;margin-top:6px"></div>`}
   </section>
 
+  ${remote.isAdmin ? `
+  <div class="dayhead px"><h2>АДМИНКА</h2>
+    <div class="meta"><span>аккаунты · чужие данные здесь не видны</span></div></div>
+  <section class="block px" style="padding:12px 14px">
+    <div class="logrow"><input id="newLogin" placeholder="логин: a-z 0-9 _" style="width:160px"><button class="logbtn" id="btnCreateUser">СОЗДАТЬ</button></div>
+    <div id="adminMsg" style="color:var(--accent);font-size:18px;margin-top:8px;overflow-wrap:anywhere"></div>
+    <div id="adminUsers" style="margin-top:10px">…</div>
+  </section>` : ''}
+
   <div class="dayhead px"><h2>СТАРТ ЦИКЛА</h2></div>
   <section class="block px" style="padding:12px 14px">
     <div style="font-size:20px">день 1 программы: <b style="color:var(--accent);font-weight:400">${anchorIso().split('-').reverse().join('.')}</b>${store.startDate ? '' : ' <span style="color:var(--text-dim);font-size:16px">(по умолчанию)</span>'}</div>
@@ -1028,6 +1042,69 @@ function renderInfo() {
       else m.glossary.splice(+i, 1);
       saveMeta(); render();
     }));
+
+  // админка: создание, сброс пароля, удаление аккаунтов
+  const adminBox = document.getElementById('adminUsers');
+  if (adminBox) {
+    const msg = document.getElementById('adminMsg');
+    const loadUsers = async () => {
+      try {
+        const r = await api('/api/admin/users');
+        if (!r.ok) { adminBox.textContent = 'не удалось загрузить список'; return; }
+        const d = await r.json();
+        adminBox.innerHTML = d.users.map(u => `<div class="dentry">
+          <span class="n">${esc(u.login)}${u.is_admin ? ' <span style="color:var(--warn)">★</span>' : ''}</span>
+          <span class="c">с ${new Date(u.created_at * 1000).toLocaleDateString('ru-RU')}</span>
+          <button class="del" data-areset="${esc(u.login)}" title="Сбросить пароль">PWD</button>
+          ${u.login === remote.login ? '' : `<button class="del" data-adel="${esc(u.login)}" title="Удалить аккаунт">X</button>`}
+        </div>`).join('');
+        adminBox.querySelectorAll('[data-areset]').forEach(b =>
+          b.addEventListener('click', async () => {
+            msg.textContent = '…';
+            try {
+              const r = await api(`/api/admin/users/${b.dataset.areset}/reset`, { method: 'POST' });
+              const d = await r.json().catch(() => ({}));
+              msg.textContent = r.ok
+                ? `новый пароль для ${b.dataset.areset}: ${d.password} — отправь человеку, дальше он сменит сам`
+                : 'ошибка сброса';
+            } catch (e) { msg.textContent = 'нет связи с сервером'; }
+          }));
+        adminBox.querySelectorAll('[data-adel]').forEach(b =>
+          b.addEventListener('click', async () => {
+            if (!b.dataset.armed) { // двухшаговое удаление: первый клик — предупреждение
+              b.dataset.armed = '1'; b.textContent = '?'; b.style.color = 'var(--danger)';
+              b.style.borderColor = 'var(--danger)';
+              setTimeout(() => { delete b.dataset.armed; b.textContent = 'X'; b.style.color = ''; b.style.borderColor = ''; }, 3000);
+              return;
+            }
+            msg.textContent = '…';
+            try {
+              const r = await api(`/api/admin/users/${b.dataset.adel}/delete`, { method: 'POST' });
+              if (r.ok) { msg.textContent = `аккаунт ${b.dataset.adel} и его данные удалены`; loadUsers(); }
+              else msg.textContent = 'ошибка удаления';
+            } catch (e) { msg.textContent = 'нет связи с сервером'; }
+          }));
+      } catch (e) { adminBox.textContent = 'нет связи с сервером'; }
+    };
+    loadUsers();
+    document.getElementById('btnCreateUser').addEventListener('click', async () => {
+      const l = document.getElementById('newLogin').value.trim().toLowerCase();
+      if (!/^[a-z0-9_]{3,20}$/.test(l)) { msg.textContent = 'логин: 3–20 символов, только a-z 0-9 _'; return; }
+      msg.textContent = '…';
+      try {
+        const r = await api('/api/admin/users', { method: 'POST', body: JSON.stringify({ login: l }) });
+        const d = await r.json().catch(() => ({}));
+        if (r.ok) {
+          msg.textContent = `создан: ${d.login} · пароль: ${d.password} — отправь человеку, дальше он сменит сам`;
+          document.getElementById('newLogin').value = '';
+          loadUsers();
+        } else {
+          msg.textContent = d.error === 'exists' ? 'такой логин уже есть'
+            : d.error === 'bad_login' ? 'логин: 3–20 символов, только a-z 0-9 _' : 'ошибка создания';
+        }
+      } catch (e) { msg.textContent = 'нет связи с сервером'; }
+    });
+  }
 }
 
 /* ---------- главный рендер ---------- */

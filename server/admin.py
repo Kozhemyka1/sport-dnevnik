@@ -4,6 +4,8 @@
   create <логин> [пароль]   — создать аккаунт (пароль сгенерируется, если не задан)
   passwd <логин> [пароль]   — сменить пароль
   delete <логин>            — удалить аккаунт и ВСЕ его данные
+  promote <логин>           — сделать админом (веб-админка: создание/сброс/удаление аккаунтов)
+  demote <логин>            — снять права админа
   list                      — список аккаунтов
 """
 import os
@@ -62,13 +64,26 @@ def main():
             c.commit()
         print(f'аккаунт {login} и его данные удалены')
 
+    elif cmd == 'promote' or cmd == 'demote':
+        if len(sys.argv) < 3:
+            print(f'нужен логин: python3 admin.py {cmd} <логин>')
+            return
+        login = sys.argv[2]
+        with db() as c:
+            cur = c.execute('UPDATE users SET is_admin=? WHERE login=?',
+                            (1 if cmd == 'promote' else 0, login))
+            c.commit()
+        print(f'{login} теперь админ' if cur.rowcount and cmd == 'promote'
+              else f'{login} больше не админ' if cur.rowcount else 'аккаунт не найден')
+
     elif cmd == 'list':
         with db() as c:
-            rows = c.execute('SELECT login, created_at FROM users ORDER BY created_at').fetchall()
+            rows = c.execute('SELECT login, created_at, is_admin FROM users ORDER BY created_at').fetchall()
         if not rows:
             print('аккаунтов пока нет')
         for r in rows:
-            print(f"  {r['login']}  (создан {time.strftime('%d.%m.%Y', time.localtime(r['created_at']))})")
+            adm = ' ★админ' if 'is_admin' in r.keys() and r['is_admin'] else ''
+            print(f"  {r['login']}{adm}  (создан {time.strftime('%d.%m.%Y', time.localtime(r['created_at']))})")
     else:
         print(__doc__)
 

@@ -60,6 +60,10 @@ def init_db():
             created_at INTEGER NOT NULL
         );
         ''')
+        # миграция: флаг админа у аккаунта
+        cols = [r['name'] for r in c.execute('PRAGMA table_info(users)').fetchall()]
+        if 'is_admin' not in cols:
+            c.execute('ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0')
         c.commit()
 
 init_db()
@@ -70,7 +74,7 @@ def create_user(login: str, password: str) -> bool:
     with closing(db()) as c:
         if c.execute('SELECT 1 FROM users WHERE login=?', (login,)).fetchone():
             return False
-        c.execute('INSERT INTO users VALUES(?,?,?)',
+        c.execute('INSERT INTO users(login, passhash, created_at) VALUES(?,?,?)',
                   (login, bcrypt.hashpw(password.encode(), bcrypt.gensalt()), int(time.time())))
         c.commit()
         return True
@@ -158,6 +162,86 @@ def password_ep(body: PassIn, req: Request):
                   (token, login, int(time.time()) + TOKEN_TTL))
         c.commit()
     return {'token': token}
+
+# ---------- админка (только флаг is_admin, выставляется через admin.py promote) ----------
+
+import string
+
+ADMIN_LOGIN_RE = re.compile(r'^[a-z0-9_]{3,20}$')
+
+def gen_password(n=10):
+    abc = string.ascii_letters + string.digits
+    return ''.join(secrets.choice(abc) for _ in range(n))
+
+@app.get('/api/me')
+def me_ep(req: Request):
+    login, err = require(req)
+    if err: return err
+    with closing(db()) as c:
+        row = c.execute('SELECT is_admin FROM users WHERE login=?', (login,)).fetchone()
+    return {'login': login, 'is_admin': bool(row and row['is_admin'])}
+
+def require_admin(req: Request):
+    login, err = require(req)
+    if err: return None, err
+    with closing(db()) as c:
+        row = c.execute('SELECT is_admin FROM users WHERE login=?', (login,)).fetchone()
+    if not row or not row['is_admin']:
+        return None, JSONResponse({'error': 'forbidden'}, status_code=403)
+    return login, None
+
+@app.get('/api/admin/users')
+def admin_users_ep(req: Request):
+    login, err = require_admin(req)
+    if err: return err
+    with closing(db()) as c:
+        rows = c.execute('SELECT login, created_at, is_admin FROM users ORDER BY created_at').fetchall()
+    return {'users': [{'login': r['login'], 'created_at': r['created_at'],
+                       'is_admin': bool(r['is_admin'])} for r in rows]}
+
+class AdminCreateIn(BaseModel):
+    login: str
+
+@app.post('/api/admin/users')
+def admin_create_ep(body: AdminCreateIn, req: Request):
+    login, err = require_admin(req)
+    if err: return err
+    new_login = body.login.strip().lower()
+    if not ADMIN_LOGIN_RE.match(new_login):
+        return JSONResponse({'error': 'bad_login'}, status_code=400)
+    pw = gen_password()
+    if not create_user(new_login, pw):
+        return JSONResponse({'error': 'exists'}, status_code=409)
+    return {'login': new_login, 'password': pw}  # пароль показывается один раз, хранится только хэш
+
+@app.post('/api/admin/users/{name}/reset')
+def admin_reset_ep(name: str, req: Request):
+    login, err = require_admin(req)
+    if err: return err
+    pw = gen_password()
+    with closing(db()) as c:
+        cur = c.execute('UPDATE users SET passhash=? WHERE login=?',
+                        (bcrypt.hashpw(pw.encode(), bcrypt.gensalt()), name))
+        c.execute('DELETE FROM tokens WHERE login=?', (name,))  # гасим все его сессии
+        c.commit()
+    if not cur.rowcount:
+        return JSONResponse({'error': 'not_found'}, status_code=404)
+    return {'login': name, 'password': pw}
+
+@app.post('/api/admin/users/{name}/delete')
+def admin_delete_ep(name: str, req: Request):
+    login, err = require_admin(req)
+    if err: return err
+    if name == login:
+        return JSONResponse({'error': 'self_delete'}, status_code=400)
+    with closing(db()) as c:
+        cur = c.execute('DELETE FROM users WHERE login=?', (name,))
+        c.execute('DELETE FROM tokens WHERE login=?', (name,))
+        c.execute('DELETE FROM kv WHERE login=?', (name,))
+        c.commit()
+    if not cur.rowcount:
+        return JSONResponse({'error': 'not_found'}, status_code=404)
+    return {'ok': True}
 
 @app.get('/api/state')
 def get_state(req: Request):
