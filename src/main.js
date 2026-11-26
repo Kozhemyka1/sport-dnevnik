@@ -2,6 +2,7 @@ import {
   START_DATE, DAY_NAMES, DAY_ORDER, TAB_ORDER, REAL_TO_PROG, DESCR,
   WARMUP, COOLDOWN, RULES, MEASUREMENTS, GLOSSARY, STARTER_WEEKS, STARTER_META_INFO,
 } from './data.js?v=20261126';
+import { SPRITE_MAP, mountSprite, setGenderFn } from './sprites.js?v=20261126b';
 
 const LS_KEY = 'sportlog.v1';
 
@@ -38,6 +39,8 @@ const THEMES = {
 };
 let curTheme = localStorage.getItem('sportlog.theme') || 'term';
 let curFont = localStorage.getItem('sportlog.font') || 'px';
+let curChar = localStorage.getItem('sportlog.char') || 'm'; // персонаж: m/f
+setGenderFn(() => curChar);
 if (!THEMES[curTheme]) curTheme = 'term';
 function applyTheme() {
   document.body.dataset.theme = curTheme;
@@ -333,12 +336,14 @@ function cursorInfo() {
 function exRow(ex, wn, d, bi, ei) {
   const id = `w${wn}-${d}-${bi}-${ei}`;
   const last = lastLog(ex.n);
+  const spr = SPRITE_MAP[ex.n];
   return `<div class="ex" data-exid="${id}">
     <div class="ex-row">
       <span class="ex-name">${esc(ex.n)}</span>
       <span class="ex-scheme">${esc(ex.s)}</span>
       <button class="qbtn" data-q="${esc(ex.n)}" title="Описание упражнения" aria-label="Описание: ${esc(ex.n)}">?</button>
     </div>
+    ${spr ? `<div class="ex-anim"><canvas width="48" height="72" data-sprite="${spr}" aria-hidden="true"></canvas></div>` : ''}
     ${ex.w ? `<div class="logrow">
       <label for="w-${id}">вес, кг</label>
       <input id="w-${id}" inputmode="decimal" placeholder="—" data-weight>
@@ -470,6 +475,9 @@ function renderDay() {
   }
 
   $view.innerHTML = html;
+
+  // пиксельные персонажи упражнений
+  $view.querySelectorAll('canvas[data-sprite]').forEach(c => mountSprite(c, c.dataset.sprite));
 
   // обработчики: описания
   $view.querySelectorAll('[data-q]').forEach(b =>
@@ -902,6 +910,10 @@ function renderInfo() {
       <button class="exbtn ${curFont === 'px' ? 'active' : ''}" data-font-pick="px">ПИКСЕЛЬ</button>
       <button class="exbtn ${curFont === 'mono' ? 'active' : ''}" data-font-pick="mono" style="font-family:'JetBrains Mono',monospace">МОНО</button>
     </div>
+    <div class="fontpick" style="margin-top:8px" title="Персонаж в упражнениях">
+      <button class="exbtn ${curChar === 'm' ? 'active' : ''}" data-char-pick="m">ПАРЕНЬ</button>
+      <button class="exbtn ${curChar === 'f' ? 'active' : ''}" data-char-pick="f">ДЕВУШКА</button>
+    </div>
   </section>
 
   ${editMode ? `<div class="weekinfo px"><span class="theme" style="color:var(--warn)">РЕЖИМ ПРАВКИ — правила, замеры и обозначения ниже редактируются</span></div>` : ''}
@@ -1005,6 +1017,12 @@ function renderInfo() {
       localStorage.setItem('sportlog.font', curFont);
       applyTheme(); render();
     }));
+  $view.querySelectorAll('[data-char-pick]').forEach(b =>
+    b.addEventListener('click', () => {
+      curChar = b.dataset.charPick;
+      localStorage.setItem('sportlog.char', curChar);
+      b.parentElement.querySelectorAll('.exbtn').forEach(x => x.classList.toggle('active', x === b));
+    })); // персонажи перерисуются сами на следующем кадре
 
   $view.querySelectorAll('[data-meas]').forEach(c =>
     c.addEventListener('change', () => {
